@@ -1,0 +1,40 @@
+[package]
+name = "vrlgraph"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ash = "0.38.0"
+ash-window = "0.13.0"
+raw-window-handle = "0.6"
+
+gpu-allocator = { version = "0.28.0", default-features = false, features = [
+  "std",
+  "vulkan",
+] }
+
+bytemuck = { version = "1", features = ["derive"] }
+petgraph = { version = "0.6", default-features = false }
+slotmap = "1.1.1"
+smallvec = { version = "1.15.1", features = ["union"] }
+
+thiserror = "2.0.18"
+tracing = "0.1.44"
+notify = "6"
+
+image = { version = "0.25", default-features = false, features = [
+  "png",
+  "jpeg",
+] }
+
+[dev-dependencies]
+winit = "0.30.13"
+tracing-subscriber = "0.3.23"
+
+[[example]]
+name = "triangle"
+path = "examples/triangle/main.rs"
+
+[[example]]
+name = "compute"
+path = "examples/compute/main.rs"
