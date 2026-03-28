@@ -307,6 +307,15 @@ impl Graph {
         usage: vk::BufferUsageFlags,
     ) -> Result<Buffer, GraphError> {
         let bytes = bytemuck::cast_slice::<T, u8>(data);
+        self.upload_buffer_labeled(bytes, usage, "uploaded_buffer")
+    }
+
+    pub(crate) fn upload_buffer_labeled(
+        &mut self,
+        bytes: &[u8],
+        usage: vk::BufferUsageFlags,
+        label: &str,
+    ) -> Result<Buffer, GraphError> {
         let size = bytes.len() as vk::DeviceSize;
         let device = self.device.ash_device().clone();
 
@@ -317,7 +326,7 @@ impl Graph {
                 size,
                 usage: vk::BufferUsageFlags::TRANSFER_SRC,
                 location: MemoryLocation::CpuToGpu,
-                label: "staging_buffer_upload".to_string(),
+                label: format!("{label}_staging"),
             },
         )?;
 
@@ -337,7 +346,7 @@ impl Graph {
                 size,
                 usage: usage | vk::BufferUsageFlags::TRANSFER_DST,
                 location: MemoryLocation::GpuOnly,
-                label: "uploaded_buffer".to_string(),
+                label: label.to_string(),
             },
         )?;
 
@@ -383,6 +392,184 @@ impl Graph {
             .get_buffer(handle.0)
             .expect("write_buffer: invalid buffer handle")
             .write(data);
+    }
+
+    // ── Convenience buffer methods ───────────────────────────────────
+
+    /// Allocates a `STORAGE_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
+    ///
+    /// Includes `SHADER_DEVICE_ADDRESS` automatically. Retrieve the GPU pointer
+    /// with [`Graph::buffer_device_address`] to pass it to shaders via push constants.
+    pub fn storage_buffer<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+    ) -> Result<Buffer, GraphError> {
+        let buf = self.create_buffer(&BufferDesc {
+            size: std::mem::size_of_val(data) as vk::DeviceSize,
+            usage: vk::BufferUsageFlags::STORAGE_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?;
+        self.write_buffer(buf, data);
+        Ok(buf)
+    }
+
+    /// Allocates an uninitialised `STORAGE_BUFFER` of `size` bytes in `CpuToGpu` memory.
+    ///
+    /// Use [`Graph::write_buffer`] to fill it from the CPU before first use.
+    pub fn storage_buffer_empty(
+        &mut self,
+        label: &str,
+        size: vk::DeviceSize,
+    ) -> Result<Buffer, GraphError> {
+        Ok(self.create_buffer(&BufferDesc {
+            size,
+            usage: vk::BufferUsageFlags::STORAGE_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?)
+    }
+
+    /// Allocates a `UNIFORM_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
+    ///
+    /// Includes `SHADER_DEVICE_ADDRESS` automatically. Update it each frame with
+    /// [`Graph::write_buffer`].
+    pub fn uniform_buffer<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+    ) -> Result<Buffer, GraphError> {
+        let buf = self.create_buffer(&BufferDesc {
+            size: std::mem::size_of_val(data) as vk::DeviceSize,
+            usage: vk::BufferUsageFlags::UNIFORM_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?;
+        self.write_buffer(buf, data);
+        Ok(buf)
+    }
+
+    /// Allocates an uninitialised `UNIFORM_BUFFER` of `size` bytes in `CpuToGpu` memory.
+    pub fn uniform_buffer_empty(
+        &mut self,
+        label: &str,
+        size: vk::DeviceSize,
+    ) -> Result<Buffer, GraphError> {
+        Ok(self.create_buffer(&BufferDesc {
+            size,
+            usage: vk::BufferUsageFlags::UNIFORM_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?)
+    }
+
+    /// Allocates a `VERTEX_BUFFER` pre-filled with `data` in `GpuOnly` memory.
+    ///
+    /// Data is transferred via a temporary staging buffer using a synchronous
+    /// one-shot submit — intended for static geometry loaded once at startup.
+    pub fn vertex_buffer<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+    ) -> Result<Buffer, GraphError> {
+        self.upload_buffer_labeled(
+            bytemuck::cast_slice(data),
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            label,
+        )
+    }
+
+    /// Allocates an `INDEX_BUFFER` pre-filled with `data` in `GpuOnly` memory.
+    ///
+    /// Like [`vertex_buffer`](Graph::vertex_buffer), data is uploaded via a
+    /// synchronous staging transfer. `T` is typically `u16` or `u32`.
+    pub fn index_buffer<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+    ) -> Result<Buffer, GraphError> {
+        self.upload_buffer_labeled(
+            bytemuck::cast_slice(data),
+            vk::BufferUsageFlags::INDEX_BUFFER,
+            label,
+        )
+    }
+
+    /// Allocates an uninitialised `VERTEX_BUFFER` of `size` bytes in `CpuToGpu` memory.
+    ///
+    /// Use [`Graph::write_buffer`] to fill it when the geometry is ready.
+    /// Intended for pre-allocating chunk buffers at maximum capacity.
+    pub fn vertex_buffer_dynamic_empty(
+        &mut self,
+        label: &str,
+        size: vk::DeviceSize,
+    ) -> Result<Buffer, GraphError> {
+        Ok(self.create_buffer(&BufferDesc {
+            size,
+            usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?)
+    }
+
+    /// Allocates an uninitialised `INDEX_BUFFER` of `size` bytes in `CpuToGpu` memory.
+    ///
+    /// Use [`Graph::write_buffer`] to fill it when the geometry is ready.
+    pub fn index_buffer_dynamic_empty(
+        &mut self,
+        label: &str,
+        size: vk::DeviceSize,
+    ) -> Result<Buffer, GraphError> {
+        Ok(self.create_buffer(&BufferDesc {
+            size,
+            usage: vk::BufferUsageFlags::INDEX_BUFFER,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?)
+    }
+
+    /// Allocates a `VERTEX_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
+    ///
+    /// Unlike [`vertex_buffer`](Graph::vertex_buffer), no staging is used — the buffer
+    /// is directly writable from the CPU via [`Graph::write_buffer`]. Intended for
+    /// geometry that changes frequently (e.g. dynamic chunks).
+    pub fn vertex_buffer_dynamic<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+    ) -> Result<Buffer, GraphError> {
+        let buf = self.create_buffer(&BufferDesc {
+            size: std::mem::size_of_val(data) as vk::DeviceSize,
+            usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?;
+        self.write_buffer(buf, data);
+        Ok(buf)
+    }
+
+    /// Allocates an `INDEX_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
+    ///
+    /// Like [`vertex_buffer_dynamic`](Graph::vertex_buffer_dynamic), directly writable
+    /// from the CPU via [`Graph::write_buffer`]. `T` is typically `u16` or `u32`.
+    pub fn index_buffer_dynamic<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+    ) -> Result<Buffer, GraphError> {
+        let buf = self.create_buffer(&BufferDesc {
+            size: std::mem::size_of_val(data) as vk::DeviceSize,
+            usage: vk::BufferUsageFlags::INDEX_BUFFER,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?;
+        self.write_buffer(buf, data);
+        Ok(buf)
     }
 
     pub fn create_sampler(&mut self, info: &vk::SamplerCreateInfo) -> Result<Sampler, GraphError> {

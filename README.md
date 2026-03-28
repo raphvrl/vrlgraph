@@ -269,24 +269,40 @@ ImageKind::CubemapArray { count: 4 }      // array of cubemaps
 
 ## Buffers
 
-### Static buffers
+### Convenience buffer methods
 
-`create_buffer` allocates a GPU buffer. `upload_buffer` is a convenience that creates a GPU-side buffer and copies data into it in one call.
+The typed methods handle usage flags and memory location automatically.
 
 ```rust
-// Allocate an empty buffer
-let uniform_buf = graph.create_buffer(&BufferDesc {
-    size: std::mem::size_of::<SceneUniforms>() as u64,
-    usage: vk::BufferUsageFlags::UNIFORM_BUFFER,
-    location: gpu_allocator::MemoryLocation::CpuToGpu,
-    label: "scene_uniforms".into(),
+// Storage buffer (CpuToGpu) — SHADER_DEVICE_ADDRESS included automatically
+let params = graph.storage_buffer("params", &data)?;
+
+// Uniform buffer (CpuToGpu) — update each frame with write_buffer
+let ubo = graph.uniform_buffer("scene_ubo", &[uniforms])?;
+graph.write_buffer(ubo, &[new_uniforms]);
+
+// Vertex / index buffers (GpuOnly) — data staged automatically via a one-shot transfer
+let verts   = graph.vertex_buffer("mesh_verts", &vertices)?;
+let indices = graph.index_buffer("mesh_indices", &idx_data)?;
+
+// Vertex / index buffers (CpuToGpu) — no staging, directly writable for dynamic geometry
+let chunk_verts   = graph.vertex_buffer_dynamic("chunk_verts", &vertices)?;
+let chunk_indices = graph.index_buffer_dynamic("chunk_indices", &idx_data)?;
+graph.write_buffer(chunk_verts, &new_vertices);
+
+// Empty storage buffer (e.g. compute scratch space)
+let scratch = graph.storage_buffer_empty("scratch", 1 << 20)?;
+```
+
+For cases that need custom usage flags or memory location, `create_buffer` and `upload_buffer` remain available.
+
+```rust
+let buf = graph.create_buffer(&BufferDesc {
+    size: 1024,
+    usage: vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER,
+    location: gpu_allocator::MemoryLocation::GpuOnly,
+    label: "indirect_args".into(),
 })?;
-
-// Write CPU data into it each frame
-graph.write_buffer(uniform_buf, std::slice::from_ref(&uniforms));
-
-// Upload a vertex buffer once
-let vertex_buf = graph.upload_buffer(&vertices, vk::BufferUsageFlags::VERTEX_BUFFER)?;
 ```
 
 ### Streaming buffers
@@ -418,13 +434,10 @@ void main() {
 
 ### Buffers
 
-Structured buffers are accessed via Buffer Device Address (BDA). Create the buffer with `SHADER_DEVICE_ADDRESS` usage, retrieve its address, and pass it as a `uint64_t` in the push constants.
+Structured buffers are accessed via Buffer Device Address (BDA). Storage buffers include `SHADER_DEVICE_ADDRESS` automatically. Retrieve the address with `buffer_device_address` and pass it as a `uint64_t` in the push constants.
 
 ```rust
-let buf = graph.create_buffer(&BufferDesc {
-    usage: vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-    ..
-})?;
+let buf = graph.storage_buffer("my_data", &data)?;
 
 let addr = graph.buffer_device_address(buf).unwrap();
 ```

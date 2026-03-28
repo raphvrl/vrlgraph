@@ -15,6 +15,9 @@ fn main() {
 
     let examples_dir = manifest_dir.join("examples");
 
+    // Rerun if a new example directory is added.
+    println!("cargo:rerun-if-changed={}", examples_dir.display());
+
     for entry in std::fs::read_dir(&examples_dir).expect("failed to read examples dir") {
         let example_dir = entry.unwrap().path();
         if !example_dir.is_dir() {

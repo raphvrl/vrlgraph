@@ -11,7 +11,9 @@ new_key_type! {
 }
 
 /// An opaque handle to a GPU buffer.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Buffer(pub(crate) BufferHandle);
 
 /// An opaque handle to a GPU pipeline.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Pipeline(pub(crate) PipelineHandle);

@@ -40,5 +40,5 @@ name = "compute"
 path = "examples/compute/main.rs"
 
 [[example]]
-name = "bda"
-path = "examples/bda/main.rs"
+name = "buffers"
+path = "examples/buffers/main.rs"
