@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 
 use crate::resource::BufferHandle;
 
-use super::image::{GraphImage, ImageEntry};
+use super::image::{Image, ImageEntry};
 use super::pass::{BufferAccess, PassAccess};
 
 #[derive(Clone)]
@@ -41,7 +41,7 @@ impl Default for BufferBarrierState {
 }
 
 pub(super) struct BarrierInfo {
-    pub image: GraphImage,
+    pub image: Image,
     pub old_layout: vk::ImageLayout,
     pub new_layout: vk::ImageLayout,
     pub src_stage: vk::PipelineStageFlags2,
@@ -150,7 +150,7 @@ mod tests {
 
     use super::*;
     use crate::graph::access::LoadOp;
-    use crate::graph::image::GraphImage;
+    use crate::graph::image::Image;
     use crate::graph::pass::{BufferAccess, PassAccess};
     use crate::resource::BufferHandle;
 
@@ -173,7 +173,7 @@ mod tests {
         access: vk::AccessFlags2,
     ) -> PassAccess {
         PassAccess {
-            image: GraphImage(id),
+            image: Image(id),
             layout,
             stage,
             access,
@@ -207,7 +207,7 @@ mod tests {
             vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
             vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
         )];
-        let result = compute_barriers(&[], &writes, &mut states).unwrap();
+        let result = compute_barriers(&[], &writes, &mut states).expect("test invariant");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].old_layout, vk::ImageLayout::UNDEFINED);
         assert_eq!(
@@ -229,7 +229,7 @@ mod tests {
             vk::PipelineStageFlags2::FRAGMENT_SHADER,
             vk::AccessFlags2::SHADER_READ,
         )];
-        let result = compute_barriers(&reads, &[], &mut states).unwrap();
+        let result = compute_barriers(&reads, &[], &mut states).expect("test invariant");
         assert_eq!(result.len(), 1);
         assert_eq!(
             result[0].src_access,
@@ -247,7 +247,7 @@ mod tests {
             stage: vk::PipelineStageFlags2::COMPUTE_SHADER,
             access: vk::AccessFlags2::SHADER_WRITE,
         }];
-        let first = compute_buffer_barriers(&[], &writes, &mut states).unwrap();
+        let first = compute_buffer_barriers(&[], &writes, &mut states).expect("test invariant");
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].src_access, vk::AccessFlags2::NONE);
 
@@ -256,7 +256,7 @@ mod tests {
             stage: vk::PipelineStageFlags2::VERTEX_SHADER,
             access: vk::AccessFlags2::SHADER_READ,
         }];
-        let second = compute_buffer_barriers(&reads, &[], &mut states).unwrap();
+        let second = compute_buffer_barriers(&reads, &[], &mut states).expect("test invariant");
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].src_access, vk::AccessFlags2::SHADER_WRITE);
     }

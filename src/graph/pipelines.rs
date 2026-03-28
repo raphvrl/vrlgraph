@@ -161,14 +161,7 @@ impl Graph {
                 let dynamic_state =
                     vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
 
-                let layout_info = vk::PipelineLayoutCreateInfo::default()
-                    .set_layouts(&desc.descriptor_set_layouts)
-                    .push_constant_ranges(&desc.push_constant_ranges);
-                let layout = unsafe { device.create_pipeline_layout(&layout_info, None) }
-                    .inspect_err(|_| unsafe {
-                        device.destroy_shader_module(vert_module, None);
-                        device.destroy_shader_module(frag_module, None);
-                    })?;
+                let layout = self.bindless.pipeline_layout();
 
                 let mut rendering_info = vk::PipelineRenderingCreateInfo::default()
                     .color_attachment_formats(color_formats);
@@ -195,7 +188,6 @@ impl Graph {
                         .map_err(|(_, e)| {
                             device.destroy_shader_module(vert_module, None);
                             device.destroy_shader_module(frag_module, None);
-                            device.destroy_pipeline_layout(layout, None);
                             e
                         })?
                 };
@@ -227,11 +219,7 @@ impl Graph {
                     .module(module)
                     .name(entry);
 
-                let layout_info = vk::PipelineLayoutCreateInfo::default()
-                    .set_layouts(&desc.descriptor_set_layouts)
-                    .push_constant_ranges(&desc.push_constant_ranges);
-                let layout = unsafe { device.create_pipeline_layout(&layout_info, None) }
-                    .inspect_err(|_| unsafe { device.destroy_shader_module(module, None) })?;
+                let layout = self.bindless.pipeline_layout();
 
                 let pipeline_info = vk::ComputePipelineCreateInfo::default()
                     .stage(stage)
@@ -240,10 +228,7 @@ impl Graph {
                 let raw = unsafe {
                     device
                         .create_compute_pipelines(self.pipeline_cache, &[pipeline_info], None)
-                        .map_err(|(_, e)| {
-                            device.destroy_pipeline_layout(layout, None);
-                            e
-                        })?
+                        .map_err(|(_, e)| e)?
                 };
 
                 unsafe { device.destroy_shader_module(module, None) };

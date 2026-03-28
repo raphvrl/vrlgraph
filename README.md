@@ -66,7 +66,7 @@ match graph.begin_frame() {
 
 | Field | Type | Description |
 |---|---|---|
-| `backbuffer` | `GraphImage` | The swapchain image for this frame |
+| `backbuffer` | `Image` | The swapchain image for this frame |
 | `extent` | `vk::Extent2D` | Current surface dimensions |
 | `index` | `u32` | Swapchain image index |
 | `resized` | `bool` | True on the first frame after a resize |
@@ -115,7 +115,6 @@ graph.compute_pass("blur")
     .write((blur_result, Access::ComputeWrite))
     .execute(move |cmd, res| {
         cmd.bind_compute_pipeline(res.pipeline(blur_pipeline));
-        cmd.bind_descriptor_sets(0, &[blur_set]);
         cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
     });
 ```
@@ -217,7 +216,7 @@ let shadow_atlas = graph.create_persistent(ImageDesc {
     ..Default::default()
 })?;
 
-// later, when no longer needed
+// later, when no longer needed — also frees any bindless slots
 graph.destroy_image(shadow_atlas);
 ```
 
@@ -253,9 +252,9 @@ let albedo = graph.load_texture("assets/wood_albedo.png")?;
 | `samples` | `vk::SampleCountFlags` | `TYPE_1` | MSAA sample count |
 | `kind` | `ImageKind` | `Image2D` | Dimensionality |
 | `label` | `String` | `""` | Debug name |
-| `usage` | `vk::ImageUsageFlags` | empty | Extra Vulkan usage flags |
+| `usage` | `vk::ImageUsageFlags` | empty | Vulkan usage flags |
 
-The graph infers the minimum required usage flags from the declared pass accesses. You only need to set `usage` when you want flags that the graph cannot infer, for example `SAMPLED` on an image that is only written as a color attachment.
+**Important with bindless:** set `SAMPLED` and/or `STORAGE` explicitly in `usage` if you need to access the image by bindless index. The graph infers other usage flags (attachment, transfer) from pass accesses, but `SAMPLED`/`STORAGE` must be declared upfront so the bindless slot is allocated at creation time. Transient images are an exception — their usage is inferred from passes before slot allocation.
 
 ### ImageKind
 
@@ -327,12 +326,12 @@ let pipeline = graph
     .color_formats(&[vk::Format::R16G16B16A16_SFLOAT])
     .depth_format(vk::Format::D32_SFLOAT)
     .vertex_input(&[binding], &[position_attr, normal_attr, uv_attr])
-    .push_constants::<PushData>(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-    .descriptor_set_layouts(&[material_layout])
     .build()?;
 ```
 
 You do not need to set `color_formats` or `depth_format` if your pass writes attachments — the graph infers them from the declared accesses. Set them explicitly only when the format cannot be inferred from context.
+
+All pipelines share the single global pipeline layout (set 0 = bindless table, 256-byte push constant range). There is no per-pipeline layout to configure.
 
 ### Compute pipelines
 
@@ -340,8 +339,6 @@ You do not need to set `color_formats` or `depth_format` if your pass writes att
 let pipeline = graph
     .compute_pipeline()
     .shader("shaders/tonemap.comp.spv")?
-    .push_constants::<TonemapParams>(vk::ShaderStageFlags::COMPUTE)
-    .descriptor_set_layouts(&[tonemap_layout])
     .build()?;
 ```
 
@@ -359,63 +356,92 @@ let graph = Graph::builder()
 
 ---
 
-## Descriptors
+## Bindless resources
 
-### Static descriptor sets
+vrlgraph uses a single global bindless descriptor set (set 0, `UPDATE_AFTER_BIND`) that holds all images and samplers for the entire application. There are no per-pass descriptor sets or descriptor pools to manage.
 
-Use `descriptor_set` to build a `VkDescriptorSet` with a fixed layout. The set is allocated once and remains valid until the graph is dropped.
+### Layout
 
-```rust
-let (layout, set) = graph
-    .descriptor_set()
-    .combined_image_sampler(vk::ShaderStageFlags::FRAGMENT, sampler, albedo_tex)
-    .uniform_buffer(vk::ShaderStageFlags::FRAGMENT, material_buf)
-    .build()?;
-```
+| Binding | Type | Capacity | Accessor |
+|---|---|---|---|
+| 0 | `texture2D textures[]` | 4096 | `res.sampled_index(img)` → `BindlessIndex<Sampled>` |
+| 1 | `image2D storage_images[]` | 1024 | `res.storage_index(img)` → `BindlessIndex<Storage>` |
+| 2 | `sampler samplers[]` | 32 | `sampler.index` |
+| 3 | `textureCube cube_textures[]` | 128 | `res.cubemap_index(img)` → `BindlessIndex<Cubemap>` |
+| 4 | `texture2DArray array_textures[]` | 256 | `res.array_index(img)` → `BindlessIndex<Array2D>` |
 
-### Dynamic descriptor sets
+### Automatic registration
 
-`build_dynamic` returns a `DynamicDescriptorSet` that can be updated when the images it references are recreated (e.g. on resize). Call `update` once per frame when `frame.resized` is true.
+Images are routed to the correct binding automatically based on `ImageKind` and `SAMPLED` usage:
 
-```rust
-let desc_set = graph
-    .descriptor_set()
-    .storage_image(vk::ShaderStageFlags::COMPUTE, hdr_buffer)
-    .build_dynamic()?;
+| ImageKind | SAMPLED binding |
+|---|---|
+| `Image2D` (default) | 0 — `res.sampled_index()` |
+| `Cubemap` / `CubemapArray` | 3 — `res.cubemap_index()` |
+| `Image2DArray` | 4 — `res.array_index()` |
 
-// In the frame loop
-if frame.resized {
-    desc_set.update(&graph);
-}
-```
-
-`DynamicDescriptorSet` exposes `layout` and `set` as public fields for passing to pipelines and `bind_descriptor_sets`.
-
-### Push descriptors
-
-Push descriptors let you update descriptor bindings directly in the command stream without allocating a descriptor pool. Use them for per-draw data that changes frequently.
+`STORAGE` images always go to binding 1 regardless of kind. On resize, all bindless slots are updated automatically.
 
 ```rust
 .execute(move |cmd, res| {
-    res.push_descriptors(cmd, 0, &[
-        PushDescriptor::combined_image_sampler(sampler, albedo_tex),
-        PushDescriptor::uniform_buffer(material_buf),
-    ]);
-    cmd.draw(vertex_count, 1);
+    let idx: BindlessIndex<Sampled> = res.sampled_index(tex2d);   // binding 0
+    let idx: BindlessIndex<Storage> = res.storage_index(target);  // binding 1
+    let idx: BindlessIndex<Cubemap> = res.cubemap_index(skybox);  // binding 3
+    let idx: BindlessIndex<Array2D> = res.array_index(atlas);     // binding 4
 });
 ```
 
-### Descriptor binding methods
+### Shaders
 
-All builder and push-descriptor types share the same set of binding methods:
+```glsl
+#extension GL_EXT_nonuniform_qualifier : require
 
-| Method | Binding type |
-|---|---|
-| `storage_image(stage, image)` | `VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` |
-| `sampled_image(stage, image)` | `VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE` |
-| `combined_image_sampler(stage, sampler, image)` | `VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER` |
-| `uniform_buffer(stage, buffer)` | `VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER` |
-| `storage_buffer(stage, buffer)` | `VK_DESCRIPTOR_TYPE_STORAGE_BUFFER` |
+layout(set = 0, binding = 0) uniform texture2D          textures[];
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D storage_images[];
+layout(set = 0, binding = 2) uniform sampler            samplers[];
+layout(set = 0, binding = 3) uniform textureCube        cube_textures[];
+layout(set = 0, binding = 4) uniform texture2DArray     array_textures[];
+
+layout(push_constant) uniform PC {
+    uint tex_idx;
+    uint cube_idx;
+    uint arr_idx;
+    uint sampler_idx;
+} pc;
+
+void main() {
+    vec4 c    = texture(sampler2D(textures[pc.tex_idx], samplers[pc.sampler_idx]), uv);
+    vec4 cube = texture(samplerCube(cube_textures[pc.cube_idx], samplers[pc.sampler_idx]), dir);
+    vec4 arr  = texture(sampler2DArray(array_textures[pc.arr_idx], samplers[pc.sampler_idx]), vec3(uv, layer));
+}
+```
+
+### Buffers
+
+Structured buffers are accessed via Buffer Device Address (BDA). Create the buffer with `SHADER_DEVICE_ADDRESS` usage, retrieve its address, and pass it as a `uint64_t` in the push constants.
+
+```rust
+let buf = graph.create_buffer(&BufferDesc {
+    usage: vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+    ..
+})?;
+
+let addr = graph.buffer_device_address(buf).unwrap();
+```
+
+```glsl
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(buffer_reference, std430) readonly buffer MyData { vec4 items[]; };
+
+layout(push_constant) uniform PC { uint64_t data_addr; } pc;
+
+void main() {
+    MyData data = MyData(pc.data_addr);
+    vec4 item = data.items[gl_GlobalInvocationID.x];
+}
+```
 
 ---
 
@@ -460,27 +486,21 @@ cmd.bind_vertex_buffer(res.buffer(vertex_buf).raw, 0);
 cmd.bind_index_buffer(res.buffer(index_buf).raw, 0);
 ```
 
-### Descriptor sets
-
-```rust
-cmd.bind_descriptor_sets(0, &[material_set, global_set]);
-```
-
 ### Push constants
 
-Push constants are written as raw bytes. Use `bytemuck` to convert a typed struct.
+Push constants are the sole mechanism to pass bindless indices, BDA pointers, and per-draw parameters to shaders. Use `bytemuck` to convert a typed struct. The shared pipeline layout exposes a single 256-byte range covering all stages, so no stage flags are needed.
 
 ```rust
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawPush {
-    transform: [[f32; 4]; 4],
-    material_id: u32,
-    _pad: [u32; 3],
+    sampled_idx: u32,
+    sampler_idx: u32,
+    _pad: [u32; 2],
 }
 
-let push = DrawPush { transform, material_id: 0, _pad: [0; 3] };
-cmd.push_constants(vk::ShaderStageFlags::VERTEX, bytemuck::bytes_of(&push));
+let push = DrawPush { sampled_idx: res.sampled_index(my_image).0, sampler_idx, _pad: [0; 2] };
+cmd.push_constants(bytemuck::bytes_of(&push));
 ```
 
 ### Draw and dispatch commands
@@ -511,7 +531,7 @@ cmd.insert_debug_label("barrier point", [0.0, 1.0, 0.0, 1.0]);
 
 ## Samplers
 
-Samplers are created from a standard `VkSamplerCreateInfo` and referenced by handle.
+Samplers are created from a standard `VkSamplerCreateInfo`. `create_sampler` returns a `Sampler` that bundles the handle (for `destroy_sampler`) with the bindless index to pass to shaders via push constants.
 
 ```rust
 let sampler = graph.create_sampler(
@@ -524,7 +544,8 @@ let sampler = graph.create_sampler(
         .max_lod(vk::LOD_CLAMP_NONE),
 )?;
 
-// later
+// sampler.index  -> u32, pass to shaders via push constants (binding 2)
+// sampler.handle -> for destroy_sampler
 graph.destroy_sampler(sampler);
 ```
 
@@ -588,18 +609,7 @@ If the requested present mode is not supported by the hardware, the graph falls 
 
 ## Window resize
 
-Call `graph.resize(width, height)` when the window size changes. The graph recreates the swapchain on the next frame. Resizable images are recreated automatically. Persistent images and static descriptor sets are not affected.
-
-If you use dynamic descriptor sets that reference resizable images, update them on the frame where `frame.resized` is true.
-
-```rust
-let frame = graph.begin_frame()?;
-
-if frame.resized {
-    hdr_desc_set.update(&graph);
-    bloom_desc_set.update(&graph);
-}
-```
+Call `graph.resize(width, height)` when the window size changes. The graph recreates the swapchain on the next frame. Resizable images are recreated automatically and their bindless indices are updated in the global table — no manual intervention required.
 
 ---
 

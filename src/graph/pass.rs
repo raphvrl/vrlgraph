@@ -8,13 +8,13 @@ use crate::resource::{
 };
 
 use super::access::{Access, BufferUsage, LoadOp};
+use super::bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Storage};
 use super::command::Cmd;
-use super::descriptor::{PushDescriptor, apply_push_writes};
-use super::image::{GraphImage, ImageEntry};
+use super::image::{Image, ImageEntry};
 
 #[derive(Clone)]
 pub(crate) struct PassAccess {
-    pub image: GraphImage,
+    pub image: Image,
     pub layout: vk::ImageLayout,
     pub stage: vk::PipelineStageFlags2,
     pub access: vk::AccessFlags2,
@@ -86,31 +86,31 @@ pub trait WriteParam: sealed::Sealed {
 ///
 /// ```rust,no_run
 /// # use vrlgraph::prelude::*;
-/// # fn example(graph: &mut Graph, target: GraphImage) {
+/// # fn example(graph: &mut Graph, target: Image) {
 /// graph.render_pass("accumulate")
 ///     .write(WithLoadOp(target, Access::ColorAttachment, LoadOp::Load))
 ///     .execute(|cmd, res| { /* ... */ });
 /// # }
 /// ```
-pub struct WithLoadOp(pub GraphImage, pub Access, pub LoadOp);
+pub struct WithLoadOp(pub Image, pub Access, pub LoadOp);
 
 /// An image write targeting a single layer of an array image or cubemap.
 ///
 /// The pass will only render into the specified layer. Useful for building
 /// cubemaps face by face or updating individual slices of an array texture.
-pub struct WithLayer(pub GraphImage, pub Access, pub u32);
+pub struct WithLayer(pub Image, pub Access, pub u32);
 
 /// An image write targeting a single layer with an explicit [`LoadOp`].
-pub struct WithLayerLoadOp(pub GraphImage, pub Access, pub LoadOp, pub u32);
+pub struct WithLayerLoadOp(pub Image, pub Access, pub LoadOp, pub u32);
 
-impl sealed::Sealed for (GraphImage, Access) {}
+impl sealed::Sealed for (Image, Access) {}
 impl sealed::Sealed for WithLoadOp {}
 impl sealed::Sealed for WithLayer {}
 impl sealed::Sealed for WithLayerLoadOp {}
 impl sealed::Sealed for (BufferHandle, BufferUsage) {}
 impl sealed::Sealed for (StreamingBufferHandle, BufferUsage) {}
 
-impl ReadParam for (GraphImage, Access) {
+impl ReadParam for (Image, Access) {
     fn apply_read(self, ctx: &mut PassContext<'_>) {
         let (image, access) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
@@ -127,7 +127,7 @@ impl ReadParam for (GraphImage, Access) {
     }
 }
 
-impl WriteParam for (GraphImage, Access) {
+impl WriteParam for (Image, Access) {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let (image, access) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
@@ -260,7 +260,7 @@ impl<'a> FrameResources<'a> {
     /// # Panics
     ///
     /// Panics if the image is not allocated or if the handle is stale.
-    pub fn image(&self, handle: GraphImage) -> &GpuImage {
+    pub fn image(&self, handle: Image) -> &GpuImage {
         let entry = &self.images[handle.0 as usize];
         let h = entry
             .handle
@@ -271,7 +271,7 @@ impl<'a> FrameResources<'a> {
     }
 
     /// Returns the full `VkImageView` for a graph image (all layers, all mips).
-    pub fn image_view(&self, handle: GraphImage) -> vk::ImageView {
+    pub fn image_view(&self, handle: Image) -> vk::ImageView {
         self.images[handle.0 as usize].view(self.pool)
     }
 
@@ -280,7 +280,7 @@ impl<'a> FrameResources<'a> {
     /// # Panics
     ///
     /// Panics if `layer` is out of range.
-    pub fn layer_view(&self, handle: GraphImage, layer: u32) -> vk::ImageView {
+    pub fn layer_view(&self, handle: Image, layer: u32) -> vk::ImageView {
         let entry = &self.images[handle.0 as usize];
         let h = entry
             .handle
@@ -323,13 +323,40 @@ impl<'a> FrameResources<'a> {
             .expect("pipeline handle stale — destroyed before frame end")
     }
 
-    /// Pushes descriptor writes directly into the command stream for `first_set`.
+    /// Returns the bindless sampled image index for use in push constants.
     ///
-    /// This uses `VK_KHR_push_descriptor` and does not require a descriptor pool.
-    /// The writes take effect immediately for subsequent draw or dispatch calls.
-    pub fn push_descriptors(&self, cmd: &mut Cmd, first_set: u32, writes: &[PushDescriptor]) {
-        apply_push_writes(writes, self.images, self.pool, |vk_writes| {
-            cmd.push_descriptor_set_raw(first_set, vk_writes);
-        });
+    /// The image must have been created with `SAMPLED` usage.
+    pub fn sampled_index(&self, handle: Image) -> BindlessIndex<Sampled> {
+        self.images[handle.0 as usize]
+            .sampled_index
+            .expect("image has no bindless sampled index — was it created with SAMPLED usage?")
+    }
+
+    /// Returns the bindless storage image index for use in push constants.
+    ///
+    /// The image must have been created with `STORAGE` usage.
+    pub fn storage_index(&self, handle: Image) -> BindlessIndex<Storage> {
+        self.images[handle.0 as usize]
+            .storage_index
+            .expect("image has no bindless storage index — was it created with STORAGE usage?")
+    }
+
+    /// Returns the bindless cubemap index (binding 3) for use in push constants.
+    ///
+    /// The image must have been created with `ImageKind::Cubemap` (or `CubemapArray`)
+    /// and `SAMPLED` usage.
+    pub fn cubemap_index(&self, handle: Image) -> BindlessIndex<Cubemap> {
+        self.images[handle.0 as usize]
+            .cubemap_index
+            .expect("image has no bindless cubemap index — was it created with Cubemap kind and SAMPLED usage?")
+    }
+
+    /// Returns the bindless 2D array index (binding 4) for use in push constants.
+    ///
+    /// The image must have been created with `ImageKind::Image2DArray` and `SAMPLED` usage.
+    pub fn array_index(&self, handle: Image) -> BindlessIndex<Array2D> {
+        self.images[handle.0 as usize]
+            .array_index
+            .expect("image has no bindless array index — was it created with Image2DArray kind and SAMPLED usage?")
     }
 }

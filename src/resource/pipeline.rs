@@ -9,7 +9,7 @@ impl GpuPipeline {
     pub(super) fn destroy(self, device: &ash::Device) {
         unsafe {
             device.destroy_pipeline(self.pipeline, None);
-            device.destroy_pipeline_layout(self.layout, None);
+            // Pipeline layout is shared (owned by BindlessDescriptorTable) — do not destroy.
         }
     }
 }

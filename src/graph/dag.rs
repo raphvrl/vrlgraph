@@ -102,12 +102,12 @@ mod tests {
 
     use super::*;
     use crate::graph::access::LoadOp;
-    use crate::graph::image::GraphImage;
+    use crate::graph::image::Image;
     use crate::graph::pass::PassAccess;
 
     fn img_access(id: u32) -> PassAccess {
         PassAccess {
-            image: GraphImage(id),
+            image: Image(id),
             layout: vk::ImageLayout::UNDEFINED,
             stage: vk::PipelineStageFlags2::empty(),
             access: vk::AccessFlags2::empty(),
@@ -134,23 +134,23 @@ mod tests {
     fn empty_input_returns_empty() {
         assert!(
             sort_and_cull_passes(vec![], &HashSet::new())
-                .unwrap()
+                .expect("test invariant")
                 .is_empty()
         );
     }
 
     #[test]
     fn live_pass_is_kept() {
-        let result =
-            sort_and_cull_passes(vec![make_pass("a", &[0], &[])], &HashSet::from([0u32])).unwrap();
+        let result = sort_and_cull_passes(vec![make_pass("a", &[0], &[])], &HashSet::from([0u32]))
+            .expect("test invariant");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "a");
     }
 
     #[test]
     fn dead_pass_is_culled() {
-        let result =
-            sort_and_cull_passes(vec![make_pass("dead", &[0], &[])], &HashSet::new()).unwrap();
+        let result = sort_and_cull_passes(vec![make_pass("dead", &[0], &[])], &HashSet::new())
+            .expect("test invariant");
         assert!(result.is_empty());
     }
 
@@ -158,8 +158,8 @@ mod tests {
     fn dependency_order_is_respected() {
         let producer = make_pass("producer", &[0], &[]);
         let consumer = make_pass("consumer", &[1], &[0]);
-        let result =
-            sort_and_cull_passes(vec![consumer, producer], &HashSet::from([1u32])).unwrap();
+        let result = sort_and_cull_passes(vec![consumer, producer], &HashSet::from([1u32]))
+            .expect("no cycle in test");
         assert_eq!(result[0].name, "producer");
         assert_eq!(result[1].name, "consumer");
     }

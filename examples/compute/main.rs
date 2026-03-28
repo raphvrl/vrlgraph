@@ -12,6 +12,15 @@ use vrlgraph::prelude::*;
 struct FillParams {
     width: u32,
     height: u32,
+    storage_idx: u32,
+    _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BlitParams {
+    sampled_idx: u32,
+    sampler_idx: u32,
 }
 
 struct State {
@@ -19,9 +28,8 @@ struct State {
     window: Window,
     compute_pipeline: PipelineHandle,
     graphics_pipeline: PipelineHandle,
-    storage_image: GraphImage,
-    compute_set: DynamicDescriptorSet,
-    graphics_set: DynamicDescriptorSet,
+    storage_image: Image,
+    sampler: Sampler,
 }
 
 impl State {
@@ -60,24 +68,10 @@ impl State {
             )
             .unwrap();
 
-        let compute_set = graph
-            .descriptor_set()
-            .storage_image(vk::ShaderStageFlags::COMPUTE, storage_image)
-            .build_dynamic()
-            .unwrap();
-
-        let graphics_set = graph
-            .descriptor_set()
-            .combined_image_sampler(vk::ShaderStageFlags::FRAGMENT, sampler, storage_image)
-            .build_dynamic()
-            .unwrap();
-
         let compute_pipeline = graph
             .compute_pipeline()
             .shader("shaders/fill.comp.spv")
             .unwrap()
-            .push_constants::<FillParams>(vk::ShaderStageFlags::COMPUTE)
-            .descriptor_set_layouts(&[compute_set.layout])
             .build()
             .unwrap();
 
@@ -87,7 +81,6 @@ impl State {
             .unwrap()
             .fragment_shader("shaders/blit.frag.spv")
             .unwrap()
-            .descriptor_set_layouts(&[graphics_set.layout])
             .build()
             .unwrap();
 
@@ -97,8 +90,7 @@ impl State {
             compute_pipeline,
             graphics_pipeline,
             storage_image,
-            compute_set,
-            graphics_set,
+            sampler,
         }
     }
 
@@ -107,28 +99,27 @@ impl State {
 
         let frame = self.graph.begin_frame()?;
 
-        if frame.resized {
-            self.compute_set.update(&self.graph);
-            self.graphics_set.update(&self.graph);
-        }
-
         let width = frame.extent.width;
         let height = frame.extent.height;
         let compute_pipe = self.compute_pipeline;
         let graphics_pipe = self.graphics_pipeline;
         let storage_image = self.storage_image;
-        let compute_set = self.compute_set.set;
-        let graphics_set = self.graphics_set.set;
+        let sampler_idx = self.sampler.index;
 
         self.graph
             .compute_pass("fill")
             .write((storage_image, Access::ComputeWrite))
             .execute(move |cmd, res| {
                 cmd.bind_compute_pipeline(res.pipeline(compute_pipe));
-                cmd.bind_descriptor_sets(0, &[compute_set]);
 
-                let params = FillParams { width, height };
-                cmd.push_constants(vk::ShaderStageFlags::COMPUTE, bytemuck::bytes_of(&params));
+                let params = FillParams {
+                    width,
+                    height,
+                    storage_idx: res.storage_index(storage_image).0,
+                    _pad: 0,
+                };
+
+                cmd.push_constants(bytemuck::bytes_of(&params));
 
                 cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
             });
@@ -142,7 +133,12 @@ impl State {
 
                 cmd.set_viewport_scissor(frame.extent);
 
-                cmd.bind_descriptor_sets(0, &[graphics_set]);
+                let params = BlitParams {
+                    sampled_idx: res.sampled_index(storage_image).0,
+                    sampler_idx,
+                };
+
+                cmd.push_constants(bytemuck::bytes_of(&params));
                 cmd.draw(3, 1);
             });
 

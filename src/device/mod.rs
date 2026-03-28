@@ -18,7 +18,6 @@ use tracing::info;
 
 const REQUIRED_DEVICE_EXTENSIONS: &[&CStr] = &[
     ash::khr::swapchain::NAME,
-    ash::khr::push_descriptor::NAME,
     ash::ext::extended_dynamic_state3::NAME,
 ];
 
@@ -63,7 +62,6 @@ pub struct GpuDevice {
     memory_properties: vk::PhysicalDeviceMemoryProperties,
     physical_device: vk::PhysicalDevice,
     allocator: Allocator,
-    push_descriptor: ash::khr::push_descriptor::Device,
     ext_dynamic_state3: ash::ext::extended_dynamic_state3::Device,
     debug_utils: Option<ash::ext::debug_utils::Device>,
     device: OwnedDevice,
@@ -137,7 +135,6 @@ impl GpuDevice {
             },
         )?;
 
-        let push_descriptor = ash::khr::push_descriptor::Device::new(instance.raw(), &device);
         let ext_dynamic_state3 =
             ash::ext::extended_dynamic_state3::Device::new(instance.raw(), &device);
         let debug_utils = if validation {
@@ -156,7 +153,6 @@ impl GpuDevice {
             memory_properties,
             physical_device,
             allocator,
-            push_descriptor,
             ext_dynamic_state3,
             debug_utils,
             device: OwnedDevice(device),
@@ -211,10 +207,6 @@ impl GpuDevice {
     }
     pub(crate) fn allocator_mut(&mut self) -> &mut gpu_allocator::vulkan::Allocator {
         &mut self.allocator
-    }
-
-    pub(crate) fn push_descriptor(&self) -> &ash::khr::push_descriptor::Device {
-        &self.push_descriptor
     }
 
     pub(crate) fn ext_dynamic_state3(&self) -> &ash::ext::extended_dynamic_state3::Device {
@@ -372,6 +364,14 @@ impl GpuDevice {
         let mut buffer_device_address =
             vk::PhysicalDeviceBufferDeviceAddressFeatures::default().buffer_device_address(true);
 
+        let mut descriptor_indexing = vk::PhysicalDeviceDescriptorIndexingFeatures::default()
+            .descriptor_binding_sampled_image_update_after_bind(true)
+            .descriptor_binding_storage_image_update_after_bind(true)
+            .descriptor_binding_partially_bound(true)
+            .runtime_descriptor_array(true)
+            .shader_sampled_image_array_non_uniform_indexing(true)
+            .shader_storage_image_array_non_uniform_indexing(true);
+
         let core_features = vk::PhysicalDeviceFeatures::default().shader_int64(true);
 
         let create_info = vk::DeviceCreateInfo::default()
@@ -384,7 +384,8 @@ impl GpuDevice {
             .push_next(&mut extended_dynamic_state2)
             .push_next(&mut extended_dynamic_state3)
             .push_next(&mut multiview)
-            .push_next(&mut buffer_device_address);
+            .push_next(&mut buffer_device_address)
+            .push_next(&mut descriptor_indexing);
 
         let device = unsafe {
             instance

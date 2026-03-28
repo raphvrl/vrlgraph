@@ -5,13 +5,14 @@ use super::access::{Access, LoadOp};
 use super::barrier::{BarrierState, compute_barriers, compute_buffer_barriers};
 use super::command::Cmd;
 use super::dag;
-use super::image::GraphImage;
+use super::image::Image;
 use super::image::ImageEntry;
 use super::pass::{
     BufferAccess, FrameResources, PassAccess, PassContext, ReadParam, RecordedPass, WithLayer,
     WithLayerLoadOp, WithLoadOp, WriteParam,
 };
 use super::query::{MAX_TIMESTAMP_PASSES, PassTiming};
+use super::resources::register_bindless;
 use super::{Frame, Graph, GraphError};
 use crate::resource::ResourcePool;
 
@@ -56,17 +57,17 @@ impl<'g> PassSetup<'g> {
         self
     }
 
-    pub fn write_with(self, image: GraphImage, access: Access, load_op: LoadOp) -> Self {
+    pub fn write_with(self, image: Image, access: Access, load_op: LoadOp) -> Self {
         self.write(WithLoadOp(image, access, load_op))
     }
 
-    pub fn write_layer(self, image: GraphImage, access: Access, layer: u32) -> Self {
+    pub fn write_layer(self, image: Image, access: Access, layer: u32) -> Self {
         self.write(WithLayer(image, access, layer))
     }
 
     pub fn write_layer_with(
         self,
-        image: GraphImage,
+        image: Image,
         access: Access,
         load_op: LoadOp,
         layer: u32,
@@ -212,7 +213,7 @@ impl Graph {
         let raw_img = self.device.swapchain().images()[image_index as usize];
         let raw_view = self.device.swapchain().image_views()[image_index as usize];
 
-        let backbuffer = GraphImage(self.images.len() as u32);
+        let backbuffer = Image(self.images.len() as u32);
         self.images
             .push(ImageEntry::external(raw_img, raw_view, extent));
         self.sc_graph_image = Some(backbuffer);
@@ -248,6 +249,12 @@ impl Graph {
                     usage,
                     entry.aspect,
                 )?;
+                let view = self
+                    .resources
+                    .get_image(handle)
+                    .expect("image just created")
+                    .view;
+                register_bindless(entry, &mut self.bindless, view);
                 entry.handle = Some(handle);
             }
         }
@@ -261,6 +268,16 @@ impl Graph {
             self.device.allocator_mut(),
         )?;
 
+        // Register transient images in the bindless table now that handles are assigned.
+        for entry in &mut self.images[self.persistent_count..] {
+            let Some(handle) = entry.handle else { continue };
+            let Some(gpu_image) = self.resources.get_image(handle) else {
+                continue;
+            };
+            let view = gpu_image.view;
+            register_bindless(entry, &mut self.bindless, view);
+        }
+
         let mut img_states: Vec<BarrierState> =
             self.images.iter().map(BarrierState::from_entry).collect();
 
@@ -268,10 +285,11 @@ impl Graph {
         let mut cmd = Cmd::new(
             raw,
             device.clone(),
-            self.device.push_descriptor().clone(),
             self.device.ext_dynamic_state3().clone(),
             self.device.debug_utils().cloned(),
         );
+
+        cmd.bind_global_set(self.bindless.pipeline_layout(), self.bindless.set());
 
         if !self.timestamp_pools.is_empty() {
             let pool = self.timestamp_pools[self.frame_index].raw();

@@ -10,8 +10,6 @@ use smallvec::SmallVec;
 #[derive(Clone)]
 pub(crate) struct PipelineDesc {
     pub kind: PipelineKind,
-    pub push_constant_ranges: Vec<vk::PushConstantRange>,
-    pub descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
 }
 
 #[derive(Clone)]

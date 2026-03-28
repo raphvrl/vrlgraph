@@ -41,10 +41,10 @@ fn assign_slots(lifetimes: &[Option<(usize, usize)>]) -> (Vec<Option<usize>>, us
         .enumerate()
         .filter_map(|(i, lt)| lt.map(|_| i))
         .collect();
-    order.sort_by_key(|&i| lifetimes[i].unwrap().0);
+    order.sort_by_key(|&i| lifetimes[i].expect("filtered to non-None above").0);
 
     for i in order {
-        let (first, last) = lifetimes[i].unwrap();
+        let (first, last) = lifetimes[i].expect("filtered to non-None above");
         let slot = slot_end.iter().position(|&end| end < first);
         let slot = match slot {
             Some(s) => {
@@ -153,7 +153,12 @@ impl TransientCache {
 
         for (i, entry) in images.iter_mut().enumerate().skip(persistent_count) {
             let Some(slot) = assignments[i] else { continue };
-            entry.handle = Some(self.slots[slot].as_ref().unwrap().handle);
+            entry.handle = Some(
+                self.slots[slot]
+                    .as_ref()
+                    .expect("slot assigned above")
+                    .handle,
+            );
         }
 
         Ok(())

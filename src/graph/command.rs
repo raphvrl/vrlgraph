@@ -72,7 +72,6 @@ impl Drop for CommandPool {
 pub struct Cmd {
     raw: vk::CommandBuffer,
     device: ash::Device,
-    push_desc: ash::khr::push_descriptor::Device,
     ext_ds3: ash::ext::extended_dynamic_state3::Device,
 
     debug_utils: Option<ash::ext::debug_utils::Device>,
@@ -84,14 +83,12 @@ impl Cmd {
     pub fn new(
         raw: vk::CommandBuffer,
         device: ash::Device,
-        push_desc: ash::khr::push_descriptor::Device,
         ext_ds3: ash::ext::extended_dynamic_state3::Device,
         debug_utils: Option<ash::ext::debug_utils::Device>,
     ) -> Self {
         Self {
             raw,
             device,
-            push_desc,
             ext_ds3,
             debug_utils,
             bound_layout: None,
@@ -261,30 +258,10 @@ impl Cmd {
         };
     }
 
-    /// Binds one or more descriptor sets starting at `first_set`. A pipeline
-    /// must be bound before calling this.
-    pub fn bind_descriptor_sets(&self, first_set: u32, sets: &[vk::DescriptorSet]) {
-        debug_assert!(
-            self.bound_layout.is_some(),
-            "Cmd: bind_pipeline() must be called before bind_descriptor_sets()"
-        );
-        if let Some(layout) = self.bound_layout {
-            unsafe {
-                self.device.cmd_bind_descriptor_sets(
-                    self.raw,
-                    self.bound_bind_point,
-                    layout,
-                    first_set,
-                    sets,
-                    &[],
-                )
-            };
-        }
-    }
-
-    /// Writes push constant data. `data` must be a `bytemuck::bytes_of(...)` slice
-    /// matching the range declared on the pipeline. A pipeline must be bound first.
-    pub fn push_constants(&self, stage: vk::ShaderStageFlags, data: &[u8]) {
+    /// Writes push constant data. `data` must be a `bytemuck::bytes_of(...)` slice.
+    /// A pipeline must be bound first. The shared pipeline layout uses a single
+    /// `ALL_STAGES` range, so stage flags are always `ALL`.
+    pub fn push_constants(&self, data: &[u8]) {
         debug_assert!(
             self.bound_layout.is_some(),
             "Cmd: bind_pipeline() must be called before push_constants()"
@@ -292,7 +269,7 @@ impl Cmd {
         if let Some(layout) = self.bound_layout {
             unsafe {
                 self.device
-                    .cmd_push_constants(self.raw, layout, stage, 0, data)
+                    .cmd_push_constants(self.raw, layout, vk::ShaderStageFlags::ALL, 0, data)
             };
         }
     }
@@ -543,21 +520,26 @@ impl Cmd {
         self.pipeline_barrier2(&barriers);
     }
 
-    pub(crate) fn push_descriptor_set_raw(&self, set: u32, writes: &[vk::WriteDescriptorSet<'_>]) {
-        debug_assert!(
-            self.bound_layout.is_some(),
-            "Cmd: bind_pipeline() must be called before push_descriptor_set_raw()"
-        );
-        if let Some(layout) = self.bound_layout {
-            unsafe {
-                self.push_desc.cmd_push_descriptor_set(
-                    self.raw,
-                    self.bound_bind_point,
-                    layout,
-                    set,
-                    writes,
-                );
-            }
+    /// Binds the global bindless descriptor set at set 0 for both graphics and
+    /// compute bind points. Called once at the start of the frame.
+    pub(crate) fn bind_global_set(&self, layout: vk::PipelineLayout, set: vk::DescriptorSet) {
+        unsafe {
+            self.device.cmd_bind_descriptor_sets(
+                self.raw,
+                vk::PipelineBindPoint::GRAPHICS,
+                layout,
+                0,
+                &[set],
+                &[],
+            );
+            self.device.cmd_bind_descriptor_sets(
+                self.raw,
+                vk::PipelineBindPoint::COMPUTE,
+                layout,
+                0,
+                &[set],
+                &[],
+            );
         }
     }
 

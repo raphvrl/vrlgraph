@@ -1,12 +1,14 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : require
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
-layout(binding = 0, rgba8) uniform writeonly image2D out_image;
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D storage_images[];
 
 layout(push_constant) uniform Params {
     uint width;
     uint height;
+    uint storage_idx;
 } u;
 
 float edge(vec2 a, vec2 b, vec2 p) {
@@ -30,5 +32,5 @@ void main() {
     vec4 color = inside
         ? vec4(1.0, 0.6, 0.1, 1.0) : vec4(0.08, 0.08, 0.08, 1.0);
 
-    imageStore(out_image, coord, color);
+    imageStore(storage_images[u.storage_idx], coord, color);
 }

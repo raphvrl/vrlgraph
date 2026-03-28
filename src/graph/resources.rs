@@ -3,36 +3,105 @@ use std::path::Path;
 use ash::vk;
 use gpu_allocator::MemoryLocation;
 
+use super::bindless::{BindlessDescriptorTable, Sampler};
 use super::command::{Cmd, CommandPool};
-use super::descriptor::{DescriptorSetBuilder, OwnedDescriptorResources};
-use super::image::{GraphImage, ImageEntry};
+use super::image::{Image, ImageEntry};
 use super::{Graph, GraphError};
 use crate::resource::{
-    BufferDesc, BufferHandle, GpuBuffer, ImageDesc, ImageHandle, ResourceError, ResourcePool,
-    SamplerHandle, StreamingBufferHandle,
+    BufferDesc, BufferHandle, GpuBuffer, ImageDesc, ImageHandle, ImageKind, ResourceError,
+    StreamingBufferHandle,
 };
 
+/// Routes a newly created image view into the correct bindless binding(s) based on
+/// image kind and usage, and writes the resulting indices back into `entry`.
+pub(super) fn register_bindless(
+    entry: &mut ImageEntry,
+    bindless: &mut BindlessDescriptorTable,
+    view: vk::ImageView,
+) {
+    if entry.usage.contains(vk::ImageUsageFlags::SAMPLED) {
+        match entry.desc.kind {
+            ImageKind::Cubemap | ImageKind::CubemapArray { .. } => {
+                entry.cubemap_index = Some(
+                    bindless
+                        .allocate_cubemap_image(view, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
+                );
+            }
+            ImageKind::Image2DArray { .. } => {
+                entry.array_index = Some(
+                    bindless.allocate_array_image(view, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
+                );
+            }
+            ImageKind::Image2D => {
+                entry.sampled_index = Some(
+                    bindless
+                        .allocate_sampled_image(view, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
+                );
+            }
+        }
+    }
+    if entry.usage.contains(vk::ImageUsageFlags::STORAGE) {
+        entry.storage_index = Some(bindless.allocate_storage_image(view));
+    }
+}
+
+/// Frees all bindless slots held by an entry back into the free-lists.
+pub(super) fn free_bindless(entry: &mut ImageEntry, bindless: &mut BindlessDescriptorTable) {
+    if let Some(idx) = entry.sampled_index.take() {
+        bindless.free_sampled(idx);
+    }
+    if let Some(idx) = entry.storage_index.take() {
+        bindless.free_storage(idx);
+    }
+    if let Some(idx) = entry.cubemap_index.take() {
+        bindless.free_cubemap(idx);
+    }
+    if let Some(idx) = entry.array_index.take() {
+        bindless.free_array(idx);
+    }
+}
+
+/// Updates all bindless slots for an entry after its view has changed (e.g. resize).
+pub(super) fn update_bindless(
+    entry: &ImageEntry,
+    bindless: &BindlessDescriptorTable,
+    view: vk::ImageView,
+) {
+    if let Some(si) = entry.sampled_index {
+        bindless.update_sampled_image(si, view, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    }
+    if let Some(si) = entry.storage_index {
+        bindless.update_storage_image(si, view);
+    }
+    if let Some(si) = entry.cubemap_index {
+        bindless.update_cubemap_image(si, view, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    }
+    if let Some(si) = entry.array_index {
+        bindless.update_array_image(si, view, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    }
+}
+
 impl Graph {
-    pub fn create_transient(&mut self, desc: ImageDesc) -> GraphImage {
+    pub fn create_transient(&mut self, desc: ImageDesc) -> Image {
         assert!(
             self.frame_active,
             "create_transient() must be called after begin_frame()"
         );
-        let h = GraphImage(self.images.len() as u32);
+        let h = Image(self.images.len() as u32);
         self.images.push(ImageEntry::transient(desc));
         h
     }
 
-    pub fn create_persistent(&mut self, desc: ImageDesc) -> Result<GraphImage, GraphError> {
+    pub fn create_persistent(&mut self, desc: ImageDesc) -> Result<Image, GraphError> {
         assert!(
             !self.frame_active,
             "create_persistent() must be called outside the frame loop"
         );
-        let h = GraphImage(self.images.len() as u32);
+        let h = Image(self.images.len() as u32);
         self.images.push(ImageEntry::persistent(desc));
         self.persistent_count += 1;
 
-        let entry = self.images.last_mut().unwrap();
+        let entry = self.images.last_mut().expect("just pushed");
         if !entry.usage.is_empty() {
             let device = self.device.ash_device().clone();
             let usage = entry.usage | vk::ImageUsageFlags::TRANSFER_DST;
@@ -43,6 +112,12 @@ impl Graph {
                 usage,
                 entry.aspect,
             )?;
+            let view = self
+                .resources
+                .get_image(handle)
+                .expect("image just created")
+                .view;
+            register_bindless(entry, &mut self.bindless, view);
             entry.handle = Some(handle);
         }
 
@@ -52,7 +127,7 @@ impl Graph {
     pub fn create_resizable(
         &mut self,
         desc_fn: impl Fn(vk::Extent2D) -> ImageDesc + 'static,
-    ) -> Result<GraphImage, GraphError> {
+    ) -> Result<Image, GraphError> {
         assert!(
             !self.frame_active,
             "create_resizable() must be called outside the frame loop"
@@ -60,7 +135,7 @@ impl Graph {
         let extent = self.device.swapchain().extent();
         let desc = desc_fn(extent);
         let idx = self.images.len();
-        let h = GraphImage(idx as u32);
+        let h = Image(idx as u32);
         self.images.push(ImageEntry::persistent(desc));
         self.persistent_count += 1;
         self.resizable_images.push((idx, Box::new(desc_fn)));
@@ -76,13 +151,20 @@ impl Graph {
                 usage,
                 entry.aspect,
             )?;
+            let view = self
+                .resources
+                .get_image(handle)
+                .expect("image just created")
+                .view;
+            let entry = &mut self.images[idx];
+            register_bindless(entry, &mut self.bindless, view);
             entry.handle = Some(handle);
         }
 
         Ok(h)
     }
 
-    pub fn load_texture(&mut self, path: impl AsRef<Path>) -> Result<GraphImage, GraphError> {
+    pub fn load_texture(&mut self, path: impl AsRef<Path>) -> Result<Image, GraphError> {
         self.load_texture_with(path, ImageDesc::default())
     }
 
@@ -90,7 +172,7 @@ impl Graph {
         &mut self,
         path: impl AsRef<Path>,
         mut desc: ImageDesc,
-    ) -> Result<GraphImage, GraphError> {
+    ) -> Result<Image, GraphError> {
         assert!(
             !self.frame_active,
             "load_texture() must be called outside the frame loop"
@@ -134,18 +216,28 @@ impl Graph {
 
         self.upload_image_data(handle, &pixels, desc.extent, desc.mip_levels)?;
 
-        let h = GraphImage(self.images.len() as u32);
-        self.images.push(ImageEntry::loaded(desc, handle));
+        let view = self
+            .resources
+            .get_image(handle)
+            .expect("image just created")
+            .view;
+        let h = Image(self.images.len() as u32);
+        let mut entry = ImageEntry::loaded(desc, handle);
+        register_bindless(&mut entry, &mut self.bindless, view);
+        self.images.push(entry);
         self.persistent_count += 1;
         Ok(h)
     }
 
-    pub fn destroy_image(&mut self, handle: GraphImage) {
+    pub fn destroy_image(&mut self, handle: Image) {
         assert!(
             !self.frame_active,
             "destroy_image() must be called outside the frame loop"
         );
+
         let entry = &mut self.images[handle.0 as usize];
+        free_bindless(entry, &mut self.bindless);
+
         if let Some(h) = entry.handle.take() {
             let device = self.device.ash_device().clone();
             self.resources
@@ -229,7 +321,10 @@ impl Graph {
         )?;
 
         {
-            let buf = self.resources.get_buffer(staging).unwrap();
+            let buf = self
+                .resources
+                .get_buffer(staging)
+                .expect("buffer just created");
             let ptr = buf.mapped_ptr().expect("staging buffer not host visible");
             unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
         }
@@ -250,13 +345,20 @@ impl Graph {
         let cmd = Cmd::new(
             raw_cb,
             device.clone(),
-            self.device.push_descriptor().clone(),
             self.device.ext_dynamic_state3().clone(),
             None,
         );
 
-        let src_raw = self.resources.get_buffer(staging).unwrap().raw;
-        let dst_raw = self.resources.get_buffer(dst).unwrap().raw;
+        let src_raw = self
+            .resources
+            .get_buffer(staging)
+            .expect("buffer just created")
+            .raw;
+        let dst_raw = self
+            .resources
+            .get_buffer(dst)
+            .expect("buffer just created")
+            .raw;
         cmd.copy_buffer_to_buffer(src_raw, dst_raw, size);
 
         let buffer = cmd.finish()?;
@@ -282,34 +384,21 @@ impl Graph {
             .write(data);
     }
 
-    pub fn create_sampler(
-        &mut self,
-        info: &vk::SamplerCreateInfo,
-    ) -> Result<SamplerHandle, GraphError> {
-        Ok(self
+    pub fn create_sampler(&mut self, info: &vk::SamplerCreateInfo) -> Result<Sampler, GraphError> {
+        let handle = self
             .resources
-            .create_sampler(self.device.ash_device(), info)?)
+            .create_sampler(self.device.ash_device(), info)?;
+        let raw = self
+            .resources
+            .get_sampler(handle)
+            .expect("sampler just created");
+        let index = self.bindless.write_sampler(raw);
+        Ok(Sampler { handle, index })
     }
 
-    pub fn destroy_sampler(&mut self, handle: SamplerHandle) {
+    pub fn destroy_sampler(&mut self, sampler: Sampler) {
         self.resources
-            .destroy_sampler(self.device.ash_device(), handle);
-    }
-
-    pub fn descriptor_set(&mut self) -> DescriptorSetBuilder<'_> {
-        DescriptorSetBuilder::new(self)
-    }
-
-    pub(in crate::graph) fn push_owned_desc(&mut self, desc: OwnedDescriptorResources) {
-        self.owned_descs.push(desc);
-    }
-
-    pub(in crate::graph) fn images_slice(&self) -> &[ImageEntry] {
-        &self.images
-    }
-
-    pub(in crate::graph) fn resources_ref(&self) -> &ResourcePool {
-        &self.resources
+            .destroy_sampler(self.device.ash_device(), sampler.handle);
     }
 
     pub(in crate::graph) fn upload_image_data(
@@ -333,7 +422,10 @@ impl Graph {
         )?;
 
         {
-            let buf = self.resources.get_buffer(staging).unwrap();
+            let buf = self
+                .resources
+                .get_buffer(staging)
+                .expect("buffer just created");
             let ptr = buf.mapped_ptr().expect("staging buffer not host visible");
             unsafe { std::ptr::copy_nonoverlapping(pixels.as_ptr(), ptr, pixels.len()) };
         }
@@ -343,14 +435,17 @@ impl Graph {
         let cmd = Cmd::new(
             raw,
             device.clone(),
-            self.device.push_descriptor().clone(),
             self.device.ext_dynamic_state3().clone(),
             None,
         );
 
-        let dst_img = self.resources.get_image(dst).unwrap();
+        let dst_img = self.resources.get_image(dst).expect("image just created");
         let vk_img = dst_img.raw;
-        let stg_buf = self.resources.get_buffer(staging).unwrap().raw;
+        let stg_buf = self
+            .resources
+            .get_buffer(staging)
+            .expect("buffer just created")
+            .raw;
 
         cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
             .src_stage_mask(vk::PipelineStageFlags2::NONE)
@@ -398,6 +493,7 @@ impl Graph {
         let cmd_info = vk::CommandBufferSubmitInfo::default().command_buffer(buffer);
         let submit =
             vk::SubmitInfo2::default().command_buffer_infos(std::slice::from_ref(&cmd_info));
+
         unsafe {
             device.queue_submit2(self.device.queue().raw(), &[submit], vk::Fence::null())?;
             device.queue_wait_idle(self.device.queue().raw())?;

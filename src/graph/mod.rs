@@ -6,10 +6,10 @@
 
 mod access;
 mod barrier;
+mod bindless;
 mod builder;
 mod command;
 mod dag;
-mod descriptor;
 mod frame;
 mod image;
 mod pass;
@@ -28,26 +28,27 @@ use std::path::PathBuf;
 use ash::vk;
 use thiserror::Error;
 
+use self::image::ImageEntry;
 use crate::device::{DeviceError, GpuDevice};
 use crate::resource::{BufferHandle, ImageDesc, PipelineHandle, ResourceError, ResourcePool};
 use barrier::BufferBarrierState;
+use bindless::BindlessDescriptorTable;
 use command::{CommandError, CommandPool};
-use descriptor::OwnedDescriptorResources;
-use image::ImageEntry;
 use pass::RecordedPass;
 use query::TimestampQueryPool;
 #[cfg(debug_assertions)]
 use reload::{PipelineDesc, ShaderWatcher};
+use resources::{free_bindless, update_bindless};
 use sync::{FrameSync, SyncError};
 use transient::TransientCache;
 
+pub use self::image::Image;
 pub use crate::resource::StreamingBufferHandle;
 pub use access::{Access, BufferUsage, LoadOp};
+pub use bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Sampler, Storage};
 pub use builder::{GpuPreference, GraphBuilder, PresentMode};
 pub use command::Cmd;
-pub use descriptor::{DescriptorSetBuilder, DescriptorWrite, DynamicDescriptorSet, PushDescriptor};
 pub use frame::PassSetup;
-pub use image::GraphImage;
 pub use pass::{FrameResources, ReadParam, WithLayer, WithLayerLoadOp, WithLoadOp, WriteParam};
 pub use pipeline::{ComputePipelineBuilder, PipelineBuilder};
 pub use query::PassTiming;
@@ -96,13 +97,12 @@ pub enum GraphError {
 /// `backbuffer` is the swapchain image for this frame — write to it as a
 /// color attachment to put pixels on screen. `extent` reflects the current
 /// surface size and should be used for viewport/scissor setup. `resized` is
-/// `true` only on the first frame after a window resize, which is the right
-/// moment to call [`DynamicDescriptorSet::update`] on any sets that reference
-/// resizable images.
+/// `true` only on the first frame after a window resize (bindless descriptors
+/// are updated automatically).
 pub struct Frame {
     /// The swapchain image for this frame. Declare it as a write target with
     /// [`Access::ColorAttachment`] in the final render pass.
-    pub backbuffer: GraphImage,
+    pub backbuffer: Image,
     /// Current surface dimensions. Use this for viewport and scissor setup.
     pub extent: vk::Extent2D,
     /// Swapchain image index for this frame.
@@ -148,7 +148,7 @@ pub(crate) struct FrameData {
 /// ```
 pub struct Graph {
     pub(crate) resources: ResourcePool,
-    pub(crate) owned_descs: Vec<OwnedDescriptorResources>,
+    pub(crate) bindless: BindlessDescriptorTable,
     pub(crate) frames: Vec<FrameData>,
     pub(crate) sync: FrameSync,
     pub(crate) current: usize,
@@ -169,7 +169,7 @@ pub struct Graph {
     pub(crate) frame_active: bool,
     pub(crate) image_index: u32,
     pub(crate) frame_index: usize,
-    pub(crate) sc_graph_image: Option<GraphImage>,
+    pub(crate) sc_graph_image: Option<Image>,
     pub(crate) pending_resize: Option<(u32, u32)>,
     #[cfg(debug_assertions)]
     pub(crate) pipeline_descs: HashMap<PipelineHandle, PipelineDesc>,
@@ -232,10 +232,13 @@ impl Graph {
         let timestamp_names = vec![Vec::new(); frames_count];
         let timestamp_written = vec![false; frames_count];
 
+        let push_constant_size = device.properties().limits.max_push_constants_size.min(256);
+        let bindless = BindlessDescriptorTable::new(device.ash_device(), push_constant_size)?;
+
         Ok(Self {
             device,
             resources: ResourcePool::new(),
-            owned_descs: Vec::new(),
+            bindless,
             frames,
             sync,
             current: 0,
@@ -299,7 +302,7 @@ impl Graph {
     ///
     /// Returns `None` for transient images outside of a frame or for images
     /// that have not been used in any pass yet.
-    pub fn image_view(&self, handle: GraphImage) -> Option<vk::ImageView> {
+    pub fn image_view(&self, handle: Image) -> Option<vk::ImageView> {
         let entry = &self.images[handle.0 as usize];
         if entry.handle.is_some() || entry.external.is_some() {
             Some(entry.view(&self.resources))
@@ -361,6 +364,12 @@ impl Graph {
                     usage,
                     aspect,
                 )?;
+                let view = self
+                    .resources
+                    .get_image(handle)
+                    .expect("image just created")
+                    .view;
+                update_bindless(&self.images[idx], &self.bindless, view);
                 self.images[idx].handle = Some(handle);
             }
         }
@@ -388,6 +397,9 @@ impl Graph {
     }
 
     pub(in crate::graph) fn cleanup_frame(&mut self) {
+        for entry in &mut self.images[self.persistent_count..] {
+            free_bindless(entry, &mut self.bindless);
+        }
         self.images.truncate(self.persistent_count);
         self.frame_active = false;
         self.sc_graph_image = None;
@@ -419,12 +431,7 @@ impl Drop for Graph {
         self.resources.drain_buffers(&device, alloc);
         self.resources.drain_pipelines(&device);
         self.resources.drain_samplers(&device);
-        for owned in self.owned_descs.drain(..) {
-            unsafe {
-                device.destroy_descriptor_pool(owned.pool, None);
-                device.destroy_descriptor_set_layout(owned.layout, None);
-            }
-        }
+        self.bindless.destroy();
         let alloc = self.device.allocator_mut();
         self.transient_cache
             .clear(&mut self.resources, &device, alloc);

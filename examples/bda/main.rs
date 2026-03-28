@@ -21,10 +21,19 @@ const PALETTE: [[f32; 4]; 8] = [
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct PushConstants {
+struct ComputePC {
     width: u32,
     height: u32,
+    storage_idx: u32,
+    _pad: u32,
     palette_addr: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BlitPC {
+    sampled_idx: u32,
+    sampler_idx: u32,
 }
 
 struct State {
@@ -32,10 +41,9 @@ struct State {
     window: Window,
     compute_pipeline: PipelineHandle,
     graphics_pipeline: PipelineHandle,
-    storage_image: GraphImage,
+    storage_image: Image,
     palette_buffer: BufferHandle,
-    compute_set: DynamicDescriptorSet,
-    graphics_set: DynamicDescriptorSet,
+    sampler: Sampler,
 }
 
 impl State {
@@ -89,24 +97,10 @@ impl State {
             )
             .unwrap();
 
-        let compute_set = graph
-            .descriptor_set()
-            .storage_image(vk::ShaderStageFlags::COMPUTE, storage_image)
-            .build_dynamic()
-            .unwrap();
-
-        let graphics_set = graph
-            .descriptor_set()
-            .combined_image_sampler(vk::ShaderStageFlags::FRAGMENT, sampler, storage_image)
-            .build_dynamic()
-            .unwrap();
-
         let compute_pipeline = graph
             .compute_pipeline()
-            .shader("shaders/bda_fill.comp.spv")
+            .shader("shaders/fill.comp.spv")
             .unwrap()
-            .push_constants::<PushConstants>(vk::ShaderStageFlags::COMPUTE)
-            .descriptor_set_layouts(&[compute_set.layout])
             .build()
             .unwrap();
 
@@ -116,7 +110,6 @@ impl State {
             .unwrap()
             .fragment_shader("shaders/blit.frag.spv")
             .unwrap()
-            .descriptor_set_layouts(&[graphics_set.layout])
             .build()
             .unwrap();
 
@@ -127,8 +120,7 @@ impl State {
             graphics_pipeline,
             storage_image,
             palette_buffer,
-            compute_set,
-            graphics_set,
+            sampler,
         }
     }
 
@@ -136,11 +128,6 @@ impl State {
         self.window.request_redraw();
 
         let frame = self.graph.begin_frame()?;
-
-        if frame.resized {
-            self.compute_set.update(&self.graph);
-            self.graphics_set.update(&self.graph);
-        }
 
         let palette_addr = self
             .graph
@@ -152,23 +139,23 @@ impl State {
         let compute_pipe = self.compute_pipeline;
         let graphics_pipe = self.graphics_pipeline;
         let storage_image = self.storage_image;
-        let compute_set = self.compute_set.set;
-        let graphics_set = self.graphics_set.set;
+        let sampler_idx = self.sampler.index;
 
         self.graph
             .compute_pass("bda_fill")
             .write((storage_image, Access::ComputeWrite))
             .execute(move |cmd, res| {
                 cmd.bind_compute_pipeline(res.pipeline(compute_pipe));
-                cmd.bind_descriptor_sets(0, &[compute_set]);
 
-                let pc = PushConstants {
+                let pc = ComputePC {
                     width,
                     height,
+                    storage_idx: res.storage_index(storage_image).0,
+                    _pad: 0,
                     palette_addr,
                 };
 
-                cmd.push_constants(vk::ShaderStageFlags::COMPUTE, bytemuck::bytes_of(&pc));
+                cmd.push_constants(bytemuck::bytes_of(&pc));
                 cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
             });
 
@@ -179,7 +166,12 @@ impl State {
             .execute(move |cmd, res| {
                 cmd.bind_graphics_pipeline(res.pipeline(graphics_pipe));
                 cmd.set_viewport_scissor(frame.extent);
-                cmd.bind_descriptor_sets(0, &[graphics_set]);
+
+                let pc = BlitPC {
+                    sampled_idx: res.sampled_index(storage_image).0,
+                    sampler_idx,
+                };
+                cmd.push_constants(bytemuck::bytes_of(&pc));
                 cmd.draw(3, 1);
             });
 

@@ -25,8 +25,6 @@ pub struct PipelineBuilder<'g> {
     depth_format: Option<vk::Format>,
     vertex_bindings: Vec<vk::VertexInputBindingDescription>,
     vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
-    push_constant_ranges: Vec<vk::PushConstantRange>,
-    descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
     #[cfg(debug_assertions)]
     vertex_path: Option<PathBuf>,
     #[cfg(debug_assertions)]
@@ -44,8 +42,6 @@ impl<'g> PipelineBuilder<'g> {
             depth_format: None,
             vertex_bindings: Vec::new(),
             vertex_attributes: Vec::new(),
-            push_constant_ranges: Vec::new(),
-            descriptor_set_layouts: Vec::new(),
             #[cfg(debug_assertions)]
             vertex_path: None,
             #[cfg(debug_assertions)]
@@ -100,23 +96,6 @@ impl<'g> PipelineBuilder<'g> {
     ) -> Self {
         self.vertex_bindings = bindings.to_vec();
         self.vertex_attributes = attributes.to_vec();
-        self
-    }
-
-    /// Declares a push constant range covering the full size of `T`.
-    /// `T` must be `#[repr(C)]` and implement `bytemuck::Pod`.
-    pub fn push_constants<T>(mut self, stages: vk::ShaderStageFlags) -> Self {
-        self.push_constant_ranges = vec![vk::PushConstantRange {
-            stage_flags: stages,
-            offset: 0,
-            size: std::mem::size_of::<T>() as u32,
-        }];
-        self
-    }
-
-    /// Sets the descriptor set layouts used by this pipeline.
-    pub fn descriptor_set_layouts(mut self, layouts: &[vk::DescriptorSetLayout]) -> Self {
-        self.descriptor_set_layouts = layouts.to_vec();
         self
     }
 
@@ -200,16 +179,7 @@ impl<'g> PipelineBuilder<'g> {
         let dynamic_state =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
 
-        let layout_info = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(&self.descriptor_set_layouts)
-            .push_constant_ranges(&self.push_constant_ranges);
-
-        let layout = unsafe { device.create_pipeline_layout(&layout_info, None) }.inspect_err(
-            |_| unsafe {
-                device.destroy_shader_module(vert_module, None);
-                device.destroy_shader_module(frag_module, None);
-            },
-        )?;
+        let layout = self.graph.bindless.pipeline_layout();
 
         let mut rendering_info = vk::PipelineRenderingCreateInfo::default()
             .color_attachment_formats(&self.color_formats);
@@ -233,10 +203,7 @@ impl<'g> PipelineBuilder<'g> {
         let raw = unsafe {
             device
                 .create_graphics_pipelines(self.graph.pipeline_cache(), &[pipeline_info], None)
-                .map_err(|(_, e)| {
-                    device.destroy_pipeline_layout(layout, None);
-                    e
-                })?
+                .map_err(|(_, e)| e)?
         };
 
         unsafe {
@@ -254,15 +221,13 @@ impl<'g> PipelineBuilder<'g> {
             handle,
             PipelineDesc {
                 kind: PipelineKind::Graphics {
-                    vertex_path: self.vertex_path.unwrap(),
-                    fragment_path: self.fragment_path.unwrap(),
+                    vertex_path: self.vertex_path.expect("set together with spv"),
+                    fragment_path: self.fragment_path.expect("set together with spv"),
                     color_formats: self.color_formats,
                     depth_format: self.depth_format,
                     vertex_bindings: self.vertex_bindings,
                     vertex_attributes: self.vertex_attributes,
                 },
-                push_constant_ranges: self.push_constant_ranges,
-                descriptor_set_layouts: self.descriptor_set_layouts,
             },
         );
 
@@ -277,8 +242,6 @@ impl<'g> PipelineBuilder<'g> {
 pub struct ComputePipelineBuilder<'g> {
     graph: &'g mut Graph,
     compute_spv: Option<Vec<u32>>,
-    push_constant_ranges: Vec<vk::PushConstantRange>,
-    descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
     #[cfg(debug_assertions)]
     compute_path: Option<PathBuf>,
 }
@@ -288,8 +251,6 @@ impl<'g> ComputePipelineBuilder<'g> {
         Self {
             graph,
             compute_spv: None,
-            push_constant_ranges: Vec::new(),
-            descriptor_set_layouts: Vec::new(),
             #[cfg(debug_assertions)]
             compute_path: None,
         }
@@ -306,22 +267,6 @@ impl<'g> ComputePipelineBuilder<'g> {
         }
         self.compute_spv = Some(load_spv(&resolved)?);
         Ok(self)
-    }
-
-    /// Declares a push constant range covering the full size of `T`.
-    pub fn push_constants<T>(mut self, stages: vk::ShaderStageFlags) -> Self {
-        self.push_constant_ranges = vec![vk::PushConstantRange {
-            stage_flags: stages,
-            offset: 0,
-            size: std::mem::size_of::<T>() as u32,
-        }];
-        self
-    }
-
-    /// Sets the descriptor set layouts used by this pipeline.
-    pub fn descriptor_set_layouts(mut self, layouts: &[vk::DescriptorSetLayout]) -> Self {
-        self.descriptor_set_layouts = layouts.to_vec();
-        self
     }
 
     /// Compiles the pipeline and registers it with the graph.
@@ -342,12 +287,7 @@ impl<'g> ComputePipelineBuilder<'g> {
             .module(module)
             .name(entry);
 
-        let layout_info = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(&self.descriptor_set_layouts)
-            .push_constant_ranges(&self.push_constant_ranges);
-
-        let layout = unsafe { device.create_pipeline_layout(&layout_info, None) }
-            .inspect_err(|_| unsafe { device.destroy_shader_module(module, None) })?;
+        let layout = self.graph.bindless.pipeline_layout();
 
         let pipeline_info = vk::ComputePipelineCreateInfo::default()
             .stage(stage)
@@ -356,10 +296,7 @@ impl<'g> ComputePipelineBuilder<'g> {
         let raw = unsafe {
             device
                 .create_compute_pipelines(self.graph.pipeline_cache(), &[pipeline_info], None)
-                .map_err(|(_, e)| {
-                    device.destroy_pipeline_layout(layout, None);
-                    e
-                })?
+                .map_err(|(_, e)| e)?
         };
 
         unsafe { device.destroy_shader_module(module, None) };
@@ -374,10 +311,8 @@ impl<'g> ComputePipelineBuilder<'g> {
             handle,
             PipelineDesc {
                 kind: PipelineKind::Compute {
-                    path: self.compute_path.unwrap(),
+                    path: self.compute_path.expect("set together with spv"),
                 },
-                push_constant_ranges: self.push_constant_ranges,
-                descriptor_set_layouts: self.descriptor_set_layouts,
             },
         );
 
@@ -408,6 +343,6 @@ pub(super) fn load_spv(path: &Path) -> Result<Vec<u32>, GraphError> {
 
     Ok(bytes
         .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .map(|c| u32::from_le_bytes(c.try_into().expect("chunks_exact(4) guarantees 4 bytes")))
         .collect())
 }

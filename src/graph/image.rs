@@ -1,9 +1,10 @@
 use ash::vk;
 
+use super::bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Storage};
 use crate::resource::{ImageDesc, ImageHandle, ResourcePool};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct GraphImage(pub(crate) u32);
+pub struct Image(pub(crate) u32);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ImageOrigin {
@@ -28,6 +29,11 @@ pub(crate) struct ImageEntry {
     pub layout: vk::ImageLayout,
     pub stage: vk::PipelineStageFlags2,
     pub access: vk::AccessFlags2,
+
+    pub sampled_index: Option<BindlessIndex<Sampled>>,
+    pub storage_index: Option<BindlessIndex<Storage>>,
+    pub cubemap_index: Option<BindlessIndex<Cubemap>>,
+    pub array_index: Option<BindlessIndex<Array2D>>,
 }
 
 impl ImageEntry {
@@ -43,6 +49,10 @@ impl ImageEntry {
             layout: vk::ImageLayout::UNDEFINED,
             stage: vk::PipelineStageFlags2::NONE,
             access: vk::AccessFlags2::NONE,
+            sampled_index: None,
+            storage_index: None,
+            cubemap_index: None,
+            array_index: None,
         }
     }
 
@@ -59,6 +69,10 @@ impl ImageEntry {
             layout: vk::ImageLayout::UNDEFINED,
             stage: vk::PipelineStageFlags2::NONE,
             access: vk::AccessFlags2::NONE,
+            sampled_index: None,
+            storage_index: None,
+            cubemap_index: None,
+            array_index: None,
         }
     }
 
@@ -77,6 +91,10 @@ impl ImageEntry {
             layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
             access: vk::AccessFlags2::SHADER_READ,
+            sampled_index: None,
+            storage_index: None,
+            cubemap_index: None,
+            array_index: None,
         }
     }
 
@@ -99,6 +117,10 @@ impl ImageEntry {
             layout: vk::ImageLayout::UNDEFINED,
             stage: vk::PipelineStageFlags2::NONE,
             access: vk::AccessFlags2::NONE,
+            sampled_index: None,
+            storage_index: None,
+            cubemap_index: None,
+            array_index: None,
         }
     }
 
