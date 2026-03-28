@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use ash::vk;
 
 use crate::resource::{GpuPipeline, Pipeline};
+use crate::vertex::VertexInput;
 
 #[cfg(debug_assertions)]
 use super::reload::{PipelineDesc, PipelineKind};
@@ -87,9 +88,22 @@ impl<'g> PipelineBuilder<'g> {
         self
     }
 
-    /// Declares vertex buffer bindings and per-vertex attribute descriptions.
-    /// Skip this for shader-only draws (e.g. fullscreen triangles with no vertex buffer).
-    pub fn vertex_input(
+    /// Declares the vertex input layout from a type that implements [`VertexInput`].
+    ///
+    /// Use `#[derive(VertexInput)]` on your vertex struct and call
+    /// `.vertex_input::<MyVertex>()`. Skip this for shader-only draws (e.g.
+    /// fullscreen triangles with no vertex buffer).
+    pub fn vertex_input<V: VertexInput>(mut self) -> Self {
+        self.vertex_bindings = V::BINDINGS.to_vec();
+        self.vertex_attributes = V::ATTRIBUTES.to_vec();
+        self
+    }
+
+    /// Raw override for vertex input — accepts Vulkan descriptors directly.
+    ///
+    /// Prefer [`vertex_input`](Self::vertex_input) with `#[derive(VertexInput)]`.
+    /// Use this only when the layout cannot be expressed as a `VertexInput` impl.
+    pub fn vertex_input_raw(
         mut self,
         bindings: &[vk::VertexInputBindingDescription],
         attributes: &[vk::VertexInputAttributeDescription],

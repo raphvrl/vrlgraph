@@ -109,7 +109,7 @@ impl State {
                     _pad: 0,
                 };
 
-                cmd.push_constants(bytemuck::bytes_of(&params));
+                cmd.push_constants(&params);
 
                 cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
             });
@@ -128,7 +128,7 @@ impl State {
                     sampler_idx,
                 };
 
-                cmd.push_constants(bytemuck::bytes_of(&params));
+                cmd.push_constants(&params);
                 cmd.draw(3, 1);
             });
 

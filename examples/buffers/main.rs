@@ -10,7 +10,7 @@ use bytemuck::{Pod, Zeroable};
 use vrlgraph::prelude::*;
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
 struct Vertex {
     pos: [f32; 2],
 }
@@ -84,17 +84,7 @@ impl State {
             .graphics_pipeline()
             .vertex_shader("shaders/mesh.vert.spv")?
             .fragment_shader("shaders/mesh.frag.spv")?
-            .vertex_input(
-                &[vk::VertexInputBindingDescription::default()
-                    .binding(0)
-                    .stride(std::mem::size_of::<Vertex>() as u32)
-                    .input_rate(vk::VertexInputRate::VERTEX)],
-                &[vk::VertexInputAttributeDescription::default()
-                    .location(0)
-                    .binding(0)
-                    .format(vk::Format::R32G32_SFLOAT)
-                    .offset(0)],
-            )
+            .vertex_input::<Vertex>()
             .build()?;
 
         Ok(Self {
@@ -113,6 +103,7 @@ impl State {
         self.window.request_redraw();
 
         let angle = self.start.elapsed().as_secs_f32();
+
         self.graph.write_buffer(
             self.transform_buf,
             std::slice::from_ref(&Transform { angle, scale: 0.8 }),
@@ -138,13 +129,13 @@ impl State {
                 cmd.bind_graphics_pipeline(res.pipeline(pipeline));
                 cmd.set_viewport_scissor(frame.extent);
 
-                cmd.bind_vertex_buffer(res.buffer(vertex_buf).raw, 0);
-                cmd.bind_index_buffer(res.buffer(index_buf).raw, 0);
+                cmd.bind_vertex_buffer(res.buffer(vertex_buf), 0);
+                cmd.bind_index_buffer(res.buffer(index_buf), 0);
 
-                cmd.push_constants(bytemuck::bytes_of(&PC {
+                cmd.push_constants(&PC {
                     transform_addr,
                     colors_addr,
-                }));
+                });
 
                 cmd.draw_indexed(INDICES.len() as u32, 1, 0, 0);
             });

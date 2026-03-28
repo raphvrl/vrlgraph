@@ -480,7 +480,7 @@ impl Graph {
     ) -> Result<Buffer, GraphError> {
         self.upload_buffer_labeled(
             bytemuck::cast_slice(data),
-            vk::BufferUsageFlags::VERTEX_BUFFER,
+            vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             label,
         )
     }
@@ -496,7 +496,7 @@ impl Graph {
     ) -> Result<Buffer, GraphError> {
         self.upload_buffer_labeled(
             bytemuck::cast_slice(data),
-            vk::BufferUsageFlags::INDEX_BUFFER,
+            vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             label,
         )
     }
@@ -512,7 +512,8 @@ impl Graph {
     ) -> Result<Buffer, GraphError> {
         Ok(self.create_buffer(&BufferDesc {
             size,
-            usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+            usage: vk::BufferUsageFlags::VERTEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             location: MemoryLocation::CpuToGpu,
             label: label.to_string(),
         })?)
@@ -528,7 +529,8 @@ impl Graph {
     ) -> Result<Buffer, GraphError> {
         Ok(self.create_buffer(&BufferDesc {
             size,
-            usage: vk::BufferUsageFlags::INDEX_BUFFER,
+            usage: vk::BufferUsageFlags::INDEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             location: MemoryLocation::CpuToGpu,
             label: label.to_string(),
         })?)
@@ -546,7 +548,8 @@ impl Graph {
     ) -> Result<Buffer, GraphError> {
         let buf = self.create_buffer(&BufferDesc {
             size: std::mem::size_of_val(data) as vk::DeviceSize,
-            usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+            usage: vk::BufferUsageFlags::VERTEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             location: MemoryLocation::CpuToGpu,
             label: label.to_string(),
         })?;
@@ -565,7 +568,8 @@ impl Graph {
     ) -> Result<Buffer, GraphError> {
         let buf = self.create_buffer(&BufferDesc {
             size: std::mem::size_of_val(data) as vk::DeviceSize,
-            usage: vk::BufferUsageFlags::INDEX_BUFFER,
+            usage: vk::BufferUsageFlags::INDEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             location: MemoryLocation::CpuToGpu,
             label: label.to_string(),
         })?;

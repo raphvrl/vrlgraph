@@ -4,7 +4,7 @@ use ash::vk;
 use smallvec::SmallVec;
 use thiserror::Error;
 
-use crate::resource::GpuPipeline;
+use crate::resource::{GpuBuffer, GpuPipeline};
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -243,25 +243,35 @@ impl Cmd {
     }
 
     /// Binds a vertex buffer to slot 0.
-    pub fn bind_vertex_buffer(&self, buffer: vk::Buffer, offset: vk::DeviceSize) {
+    pub fn bind_vertex_buffer(&self, buffer: &GpuBuffer, offset: vk::DeviceSize) {
         unsafe {
             self.device
-                .cmd_bind_vertex_buffers(self.raw, 0, &[buffer], &[offset])
+                .cmd_bind_vertex_buffers(self.raw, 0, &[buffer.raw], &[offset])
         };
     }
 
     /// Binds an index buffer. Indices are expected to be `u32`.
-    pub fn bind_index_buffer(&self, buffer: vk::Buffer, offset: vk::DeviceSize) {
+    pub fn bind_index_buffer(&self, buffer: &GpuBuffer, offset: vk::DeviceSize) {
         unsafe {
             self.device
-                .cmd_bind_index_buffer(self.raw, buffer, offset, vk::IndexType::UINT32)
+                .cmd_bind_index_buffer(self.raw, buffer.raw, offset, vk::IndexType::UINT32)
         };
     }
 
-    /// Writes push constant data. `data` must be a `bytemuck::bytes_of(...)` slice.
-    /// A pipeline must be bound first. The shared pipeline layout uses a single
-    /// `ALL_STAGES` range, so stage flags are always `ALL`.
-    pub fn push_constants(&self, data: &[u8]) {
+    /// Writes a typed value as push constant data.
+    ///
+    /// `T` must implement [`bytemuck::Pod`]. A pipeline must be bound first.
+    /// The shared pipeline layout uses a single `ALL_STAGES` range.
+    pub fn push_constants<T: bytemuck::Pod>(&self, data: &T) {
+        self.push_constants_raw(bytemuck::bytes_of(data));
+    }
+
+    /// Writes raw bytes as push constant data.
+    ///
+    /// Prefer [`push_constants`](Cmd::push_constants) for typed values.
+    /// Use this when the payload is assembled dynamically (e.g. a variable-length
+    /// byte slice). A pipeline must be bound first.
+    pub fn push_constants_raw(&self, data: &[u8]) {
         debug_assert!(
             self.bound_layout.is_some(),
             "Cmd: bind_pipeline() must be called before push_constants()"
@@ -297,27 +307,27 @@ impl Cmd {
 
     pub fn draw_indirect(
         &self,
-        buffer: vk::Buffer,
+        buffer: &GpuBuffer,
         offset: vk::DeviceSize,
         draw_count: u32,
         stride: u32,
     ) {
         unsafe {
             self.device
-                .cmd_draw_indirect(self.raw, buffer, offset, draw_count, stride)
+                .cmd_draw_indirect(self.raw, buffer.raw, offset, draw_count, stride)
         };
     }
 
     pub fn draw_indexed_indirect(
         &self,
-        buffer: vk::Buffer,
+        buffer: &GpuBuffer,
         offset: vk::DeviceSize,
         draw_count: u32,
         stride: u32,
     ) {
         unsafe {
             self.device
-                .cmd_draw_indexed_indirect(self.raw, buffer, offset, draw_count, stride)
+                .cmd_draw_indexed_indirect(self.raw, buffer.raw, offset, draw_count, stride)
         };
     }
 
@@ -333,12 +343,12 @@ impl Cmd {
 
     /// Dispatches a compute workload using arguments read from a buffer at `offset`.
     /// The buffer must contain a `VkDispatchIndirectCommand`.
-    pub fn dispatch_indirect(&self, buffer: vk::Buffer, offset: vk::DeviceSize) {
+    pub fn dispatch_indirect(&self, buffer: &GpuBuffer, offset: vk::DeviceSize) {
         debug_assert!(
             self.bound_bind_point == vk::PipelineBindPoint::COMPUTE,
             "Cmd: bind_compute_pipeline() must be called before dispatch_indirect()"
         );
-        unsafe { self.device.cmd_dispatch_indirect(self.raw, buffer, offset) };
+        unsafe { self.device.cmd_dispatch_indirect(self.raw, buffer.raw, offset) };
     }
 
     pub fn clear_color(&self, image: vk::Image, color: [f32; 4]) {

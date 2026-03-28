@@ -24,8 +24,9 @@ pub struct BufferDesc {
 ///
 /// Returned by [`FrameResources::buffer`](crate::graph::FrameResources::buffer)
 /// and [`FrameResources::streaming_buffer`](crate::graph::FrameResources::streaming_buffer).
-/// Use `raw` when you need the underlying `VkBuffer` handle for binding.
-/// Use `device_address` to pass the buffer as a raw 64-bit GPU pointer via push constants
+/// Pass a reference directly to [`Cmd::bind_vertex_buffer`](crate::graph::Cmd::bind_vertex_buffer),
+/// [`Cmd::bind_index_buffer`](crate::graph::Cmd::bind_index_buffer), and the indirect draw/dispatch
+/// methods. Use `device_address` to pass the buffer as a raw 64-bit GPU pointer via push constants
 /// (requires [`vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS`] at creation time).
 pub struct GpuBuffer {
     /// The underlying `VkBuffer`.
@@ -76,8 +77,16 @@ impl GpuBuffer {
             return Err(ResourceError::Vulkan(e));
         }
 
-        let device_address = unsafe {
-            device.get_buffer_device_address(&vk::BufferDeviceAddressInfo::default().buffer(raw))
+        let device_address = if desc
+            .usage
+            .contains(vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS)
+        {
+            unsafe {
+                device
+                    .get_buffer_device_address(&vk::BufferDeviceAddressInfo::default().buffer(raw))
+            }
+        } else {
+            0
         };
 
         Ok(Self {

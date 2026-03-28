@@ -3,9 +3,13 @@
 pub mod device;
 pub mod graph;
 pub mod resource;
+pub mod vertex;
 
 #[doc(hidden)]
 pub use ash::vk;
+
+pub use vertex::{VertexAttribute, VertexInput};
+pub use vrlgraph_derive::VertexInput;
 
 pub mod prelude {
 
@@ -21,6 +25,9 @@ pub mod prelude {
     };
 
     pub use crate::device::DeviceError;
+
+    pub use crate::vertex::{VertexAttribute, VertexInput};
+    pub use vrlgraph_derive::VertexInput;
 
     pub use ash::vk;
 }

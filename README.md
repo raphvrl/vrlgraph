@@ -99,8 +99,8 @@ graph.render_pass("shadow_map")
     .execute(move |cmd, res| {
         cmd.bind_graphics_pipeline(res.pipeline(shadow_pipeline));
         cmd.set_viewport_scissor(shadow_extent);
-        cmd.bind_vertex_buffer(res.buffer(vertex_buffer).raw, 0);
-        cmd.bind_index_buffer(res.buffer(index_buffer).raw, 0);
+        cmd.bind_vertex_buffer(res.buffer(vertex_buffer), 0);
+        cmd.bind_index_buffer(res.buffer(index_buffer), 0);
         cmd.draw_indexed(index_count, 1, 0, 0);
     });
 ```
@@ -334,16 +334,72 @@ Inside the frame loop, access the current slot through `FrameResources`:
 
 ### Graphics pipelines
 
+Derive `VertexInput` on your vertex struct. The macro generates the binding and attribute descriptions automatically from the field types, using `offset_of!` for offsets and inferring the Vulkan format from the Rust type.
+
 ```rust
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+struct Vertex {
+    pos:    [f32; 3],
+    normal: [f32; 3],
+    uv:     [f32; 2],
+}
+
 let pipeline = graph
     .graphics_pipeline()
     .vertex_shader("shaders/mesh.vert.spv")?
     .fragment_shader("shaders/pbr.frag.spv")?
     .color_formats(&[vk::Format::R16G16B16A16_SFLOAT])
     .depth_format(vk::Format::D32_SFLOAT)
-    .vertex_input(&[binding], &[position_attr, normal_attr, uv_attr])
+    .vertex_input::<Vertex>()
     .build()?;
 ```
+
+Skip `vertex_input` entirely for shader-only draws (fullscreen triangles, compute-driven geometry, etc.).
+
+#### Format inference
+
+| Rust type | Vulkan format |
+|---|---|
+| `f32` | `R32_SFLOAT` |
+| `[f32; 2]` | `R32G32_SFLOAT` |
+| `[f32; 3]` | `R32G32B32_SFLOAT` |
+| `[f32; 4]` | `R32G32B32A32_SFLOAT` |
+| `u32` / `[u32; N]` | `R32_UINT` / `R32G32[B32[A32]]_UINT` |
+| `i32` / `[i32; N]` | `R32_SINT` / `R32G32[B32[A32]]_SINT` |
+| `[u8; 4]` | `R8G8B8A8_UNORM` |
+
+Enable the `glam` feature to add automatic format inference for `glam::Vec2/3/4`, `UVec2/3/4`, `IVec2/3/4`.
+
+#### Overrides
+
+Use `#[format(FORMAT)]` on a field when the type cannot be inferred automatically:
+
+```rust
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+struct Vertex {
+    pos: glam::Vec3,                    // inferred if `glam` feature is enabled
+    #[format(R16G16_SFLOAT)]
+    uv: [u16; 2],                       // explicit override
+}
+```
+
+Use `#[vertex_input(rate = instance)]` on the struct for per-instance data:
+
+```rust
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+#[vertex_input(rate = instance)]
+struct InstanceData {
+    model_col0: [f32; 4],
+    model_col1: [f32; 4],
+    model_col2: [f32; 4],
+    model_col3: [f32; 4],
+}
+```
+
+For cases that cannot be expressed as a `VertexInput` impl, `vertex_input_raw(bindings, attributes)` accepts Vulkan descriptors directly.
 
 You do not need to set `color_formats` or `depth_format` if your pass writes attachments — the graph infers them from the declared accesses. Set them explicitly only when the format cannot be inferred from context.
 
@@ -494,38 +550,43 @@ cmd.set_default_blend_state(attachment_count);
 
 ### Vertex and index buffers
 
+Pass the `&GpuBuffer` reference from `FrameResources` directly — no `.raw` unwrapping needed.
+
 ```rust
-cmd.bind_vertex_buffer(res.buffer(vertex_buf).raw, 0);
-cmd.bind_index_buffer(res.buffer(index_buf).raw, 0);
+cmd.bind_vertex_buffer(res.buffer(vertex_buf), 0);
+cmd.bind_index_buffer(res.buffer(index_buf), 0);
 ```
 
 ### Push constants
 
-Push constants are the sole mechanism to pass bindless indices, BDA pointers, and per-draw parameters to shaders. Use `bytemuck` to convert a typed struct. The shared pipeline layout exposes a single 256-byte range covering all stages, so no stage flags are needed.
+Push constants are the sole mechanism to pass bindless indices, BDA pointers, and per-draw parameters to shaders. The shared pipeline layout exposes a single 256-byte range covering all stages.
+
+Pass any `Pod` value directly — no manual byte conversion needed:
 
 ```rust
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct DrawPush {
     sampled_idx: u32,
     sampler_idx: u32,
     _pad: [u32; 2],
 }
 
-let push = DrawPush { sampled_idx: res.sampled_index(my_image).0, sampler_idx, _pad: [0; 2] };
-cmd.push_constants(bytemuck::bytes_of(&push));
+cmd.push_constants(&DrawPush { sampled_idx: res.sampled_index(my_image).0, sampler_idx, _pad: [0; 2] });
 ```
+
+For dynamic payloads assembled at runtime (e.g. a `Vec<u8>` slice), use `push_constants_raw(&[u8])`.
 
 ### Draw and dispatch commands
 
 ```rust
 cmd.draw(vertex_count, instance_count);
 cmd.draw_indexed(index_count, instance_count, first_index, vertex_offset);
-cmd.draw_indirect(indirect_buf, 0, draw_count, stride);
-cmd.draw_indexed_indirect(indirect_buf, 0, draw_count, stride);
+cmd.draw_indirect(res.buffer(indirect_buf), 0, draw_count, stride);
+cmd.draw_indexed_indirect(res.buffer(indirect_buf), 0, draw_count, stride);
 
 cmd.dispatch(groups_x, groups_y, groups_z);
-cmd.dispatch_indirect(indirect_buf, 0);
+cmd.dispatch_indirect(res.buffer(indirect_buf), 0);
 ```
 
 ### Debug markers
