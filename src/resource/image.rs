@@ -15,15 +15,11 @@ pub enum ImageKind {
     Image2D,
     /// An array of 2D images with `layers` slices. Useful for shadow atlases
     /// or texture arrays.
-    Image2DArray {
-        layers: u32,
-    },
+    Image2DArray { layers: u32 },
     /// A 6-face cubemap. The 6 layers are ordered +X, -X, +Y, -Y, +Z, -Z.
     Cubemap,
     /// An array of `count` cubemaps, for a total of `count * 6` layers.
-    CubemapArray {
-        count: u32,
-    },
+    CubemapArray { count: u32 },
 }
 
 impl ImageKind {

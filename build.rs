@@ -26,6 +26,9 @@ fn main() {
             continue;
         }
 
+        // Watch the directory itself so that adding a new .glsl file triggers a rebuild.
+        println!("cargo:rerun-if-changed={}", shaders_src.display());
+
         for shader_entry in std::fs::read_dir(&shaders_src).unwrap() {
             let shader_path = shader_entry.unwrap().path();
 
@@ -57,6 +60,7 @@ fn main() {
             };
 
             let status = Command::new("glslc")
+                .arg("--target-env=vulkan1.2")
                 .arg(format!("-fshader-stage={stage}"))
                 .arg(&shader_path)
                 .arg("-o")

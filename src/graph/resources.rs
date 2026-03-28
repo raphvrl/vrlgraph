@@ -170,6 +170,12 @@ impl Graph {
         self.resources.get_buffer(handle)
     }
 
+    /// Returns the GPU virtual address of a buffer created with
+    /// [`vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS`], or `None` otherwise.
+    pub fn buffer_device_address(&self, handle: BufferHandle) -> Option<vk::DeviceAddress> {
+        self.resources.get_buffer(handle)?.device_address
+    }
+
     pub fn create_streaming_buffer(
         &mut self,
         size: vk::DeviceSize,
@@ -280,11 +286,14 @@ impl Graph {
         &mut self,
         info: &vk::SamplerCreateInfo,
     ) -> Result<SamplerHandle, GraphError> {
-        Ok(self.resources.create_sampler(self.device.ash_device(), info)?)
+        Ok(self
+            .resources
+            .create_sampler(self.device.ash_device(), info)?)
     }
 
     pub fn destroy_sampler(&mut self, handle: SamplerHandle) {
-        self.resources.destroy_sampler(self.device.ash_device(), handle);
+        self.resources
+            .destroy_sampler(self.device.ash_device(), handle);
     }
 
     pub fn descriptor_set(&mut self) -> DescriptorSetBuilder<'_> {

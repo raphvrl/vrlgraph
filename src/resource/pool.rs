@@ -173,6 +173,12 @@ impl ResourcePool {
         }
     }
 
+    pub(crate) fn drain_buffers(&mut self, device: &ash::Device, allocator: &mut Allocator) {
+        for (_, buf) in self.buffers.drain() {
+            buf.destroy(device, allocator);
+        }
+    }
+
     pub(crate) fn drain_pipelines(&mut self, device: &ash::Device) {
         for (_, pipe) in self.pipelines.drain() {
             pipe.destroy(device);

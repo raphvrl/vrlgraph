@@ -24,12 +24,11 @@ void main() {
     vec2 c = vec2(0.1, 0.9);
 
     bool inside = edge(a, b, uv) >= 0.0
-               && edge(b, c, uv) >= 0.0
-               && edge(c, a, uv) >= 0.0;
+            && edge(b, c, uv) >= 0.0
+            && edge(c, a, uv) >= 0.0;
 
     vec4 color = inside
-        ? vec4(1.0, 0.6, 0.1, 1.0)
-        : vec4(0.08, 0.08, 0.08, 1.0);
+        ? vec4(1.0, 0.6, 0.1, 1.0) : vec4(0.08, 0.08, 0.08, 1.0);
 
     imageStore(out_image, coord, color);
 }

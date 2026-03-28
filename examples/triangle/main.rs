@@ -65,7 +65,6 @@ impl State {
     }
 }
 
-
 struct App {
     state: Option<State>,
 }

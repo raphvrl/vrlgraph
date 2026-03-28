@@ -142,19 +142,30 @@ mod tests {
 
     #[test]
     fn depth_only_formats() {
-        for fmt in [vk::Format::D16_UNORM, vk::Format::D32_SFLOAT, vk::Format::X8_D24_UNORM_PACK32] {
+        for fmt in [
+            vk::Format::D16_UNORM,
+            vk::Format::D32_SFLOAT,
+            vk::Format::X8_D24_UNORM_PACK32,
+        ] {
             assert_eq!(aspect_from_format(fmt), vk::ImageAspectFlags::DEPTH);
         }
     }
 
     #[test]
     fn stencil_only_format() {
-        assert_eq!(aspect_from_format(vk::Format::S8_UINT), vk::ImageAspectFlags::STENCIL);
+        assert_eq!(
+            aspect_from_format(vk::Format::S8_UINT),
+            vk::ImageAspectFlags::STENCIL
+        );
     }
 
     #[test]
     fn depth_stencil_formats() {
-        for fmt in [vk::Format::D16_UNORM_S8_UINT, vk::Format::D24_UNORM_S8_UINT, vk::Format::D32_SFLOAT_S8_UINT] {
+        for fmt in [
+            vk::Format::D16_UNORM_S8_UINT,
+            vk::Format::D24_UNORM_S8_UINT,
+            vk::Format::D32_SFLOAT_S8_UINT,
+        ] {
             assert_eq!(
                 aspect_from_format(fmt),
                 vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
@@ -164,6 +175,9 @@ mod tests {
 
     #[test]
     fn color_format() {
-        assert_eq!(aspect_from_format(vk::Format::R8G8B8A8_UNORM), vk::ImageAspectFlags::COLOR);
+        assert_eq!(
+            aspect_from_format(vk::Format::R8G8B8A8_UNORM),
+            vk::ImageAspectFlags::COLOR
+        );
     }
 }

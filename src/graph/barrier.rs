@@ -159,7 +159,11 @@ mod tests {
         stage: vk::PipelineStageFlags2,
         access: vk::AccessFlags2,
     ) -> BarrierState {
-        BarrierState { layout, stage, access }
+        BarrierState {
+            layout,
+            stage,
+            access,
+        }
     }
 
     fn img_access(
@@ -206,7 +210,10 @@ mod tests {
         let result = compute_barriers(&[], &writes, &mut states).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].old_layout, vk::ImageLayout::UNDEFINED);
-        assert_eq!(result[0].new_layout, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        assert_eq!(
+            result[0].new_layout,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        );
     }
 
     #[test]
@@ -224,7 +231,10 @@ mod tests {
         )];
         let result = compute_barriers(&reads, &[], &mut states).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].src_access, vk::AccessFlags2::COLOR_ATTACHMENT_WRITE);
+        assert_eq!(
+            result[0].src_access,
+            vk::AccessFlags2::COLOR_ATTACHMENT_WRITE
+        );
     }
 
     #[test]

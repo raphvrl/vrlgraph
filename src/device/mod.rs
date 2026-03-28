@@ -120,7 +120,7 @@ impl GpuDevice {
             device: device.clone(),
             physical_device,
             debug_settings: Default::default(),
-            buffer_device_address: false,
+            buffer_device_address: true,
             allocation_sizes: Default::default(),
         })?;
 
@@ -369,15 +369,22 @@ impl GpuDevice {
 
         let mut multiview = vk::PhysicalDeviceMultiviewFeatures::default().multiview(true);
 
+        let mut buffer_device_address =
+            vk::PhysicalDeviceBufferDeviceAddressFeatures::default().buffer_device_address(true);
+
+        let core_features = vk::PhysicalDeviceFeatures::default().shader_int64(true);
+
         let create_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(&queue_create_infos)
             .enabled_extension_names(&extension_ptrs)
+            .enabled_features(&core_features)
             .push_next(&mut dynamic_rendering)
             .push_next(&mut synchronization2)
             .push_next(&mut extended_dynamic_state)
             .push_next(&mut extended_dynamic_state2)
             .push_next(&mut extended_dynamic_state3)
-            .push_next(&mut multiview);
+            .push_next(&mut multiview)
+            .push_next(&mut buffer_device_address);
 
         let device = unsafe {
             instance

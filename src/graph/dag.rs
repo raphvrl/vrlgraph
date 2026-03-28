@@ -132,16 +132,17 @@ mod tests {
 
     #[test]
     fn empty_input_returns_empty() {
-        assert!(sort_and_cull_passes(vec![], &HashSet::new()).unwrap().is_empty());
+        assert!(
+            sort_and_cull_passes(vec![], &HashSet::new())
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
     fn live_pass_is_kept() {
-        let result = sort_and_cull_passes(
-            vec![make_pass("a", &[0], &[])],
-            &HashSet::from([0u32]),
-        )
-        .unwrap();
+        let result =
+            sort_and_cull_passes(vec![make_pass("a", &[0], &[])], &HashSet::from([0u32])).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "a");
     }
@@ -157,11 +158,8 @@ mod tests {
     fn dependency_order_is_respected() {
         let producer = make_pass("producer", &[0], &[]);
         let consumer = make_pass("consumer", &[1], &[0]);
-        let result = sort_and_cull_passes(
-            vec![consumer, producer],
-            &HashSet::from([1u32]),
-        )
-        .unwrap();
+        let result =
+            sort_and_cull_passes(vec![consumer, producer], &HashSet::from([1u32])).unwrap();
         assert_eq!(result[0].name, "producer");
         assert_eq!(result[1].name, "consumer");
     }

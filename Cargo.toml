@@ -38,3 +38,7 @@ path = "examples/triangle/main.rs"
 [[example]]
 name = "compute"
 path = "examples/compute/main.rs"
+
+[[example]]
+name = "bda"
+path = "examples/bda/main.rs"

@@ -415,6 +415,8 @@ impl Drop for Graph {
                 .destroy_pipeline_cache(self.pipeline_cache, None);
         }
         let device = self.device.ash_device().clone();
+        let alloc = self.device.allocator_mut();
+        self.resources.drain_buffers(&device, alloc);
         self.resources.drain_pipelines(&device);
         self.resources.drain_samplers(&device);
         for owned in self.owned_descs.drain(..) {
