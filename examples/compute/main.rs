@@ -26,8 +26,8 @@ struct BlitParams {
 struct State {
     graph: Graph,
     window: Window,
-    compute_pipeline: PipelineHandle,
-    graphics_pipeline: PipelineHandle,
+    compute_pipeline: Pipeline,
+    graphics_pipeline: Pipeline,
     storage_image: Image,
     sampler: Sampler,
 }

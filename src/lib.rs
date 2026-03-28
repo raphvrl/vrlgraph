@@ -17,7 +17,7 @@ pub mod prelude {
     };
 
     pub use crate::resource::{
-        BufferDesc, BufferHandle, ImageDesc, ImageHandle, ImageKind, PipelineHandle, ResourceError,
+        Buffer, BufferDesc, ImageDesc, ImageHandle, ImageKind, Pipeline, ResourceError,
     };
 
     pub use crate::device::DeviceError;

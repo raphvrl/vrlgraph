@@ -39,10 +39,10 @@ struct BlitPC {
 struct State {
     graph: Graph,
     window: Window,
-    compute_pipeline: PipelineHandle,
-    graphics_pipeline: PipelineHandle,
+    compute_pipeline: Pipeline,
+    graphics_pipeline: Pipeline,
     storage_image: Image,
-    palette_buffer: BufferHandle,
+    palette_buffer: Buffer,
     sampler: Sampler,
 }
 
@@ -105,7 +105,7 @@ impl State {
             .unwrap();
 
         let graphics_pipeline = graph
-            .graphics_pipeline()
+            .graphics_pipeline() 
             .vertex_shader("shaders/fullscreen.vert.spv")
             .unwrap()
             .fragment_shader("shaders/blit.frag.spv")

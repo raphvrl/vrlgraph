@@ -8,7 +8,7 @@ use super::command::{Cmd, CommandPool};
 use super::image::{Image, ImageEntry};
 use super::{Graph, GraphError};
 use crate::resource::{
-    BufferDesc, BufferHandle, GpuBuffer, ImageDesc, ImageHandle, ImageKind, ResourceError,
+    Buffer, BufferDesc, GpuBuffer, ImageDesc, ImageHandle, ImageKind, ResourceError,
     StreamingBufferHandle,
 };
 
@@ -245,27 +245,28 @@ impl Graph {
         }
     }
 
-    pub fn create_buffer(&mut self, desc: &BufferDesc) -> Result<BufferHandle, ResourceError> {
+    pub fn create_buffer(&mut self, desc: &BufferDesc) -> Result<Buffer, ResourceError> {
         let device = self.device.ash_device().clone();
         self.resources
             .create_buffer(&device, self.device.allocator_mut(), desc)
+            .map(Buffer)
     }
 
-    pub fn destroy_buffer(&mut self, handle: BufferHandle) {
+    pub fn destroy_buffer(&mut self, handle: Buffer) {
         let device = self.device.ash_device().clone();
         self.resources
-            .destroy_buffer(&device, self.device.allocator_mut(), handle);
-        self.buffer_states.remove(&handle);
+            .destroy_buffer(&device, self.device.allocator_mut(), handle.0);
+        self.buffer_states.remove(&handle.0);
     }
 
-    pub fn get_buffer(&self, handle: BufferHandle) -> Option<&GpuBuffer> {
-        self.resources.get_buffer(handle)
+    pub fn get_buffer(&self, handle: Buffer) -> Option<&GpuBuffer> {
+        self.resources.get_buffer(handle.0)
     }
 
     /// Returns the GPU virtual address of a buffer created with
     /// [`vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS`], or `None` otherwise.
-    pub fn buffer_device_address(&self, handle: BufferHandle) -> Option<vk::DeviceAddress> {
-        self.resources.get_buffer(handle)?.device_address
+    pub fn buffer_device_address(&self, handle: Buffer) -> Option<vk::DeviceAddress> {
+        self.resources.get_buffer(handle.0)?.device_address
     }
 
     pub fn create_streaming_buffer(
@@ -304,7 +305,7 @@ impl Graph {
         &mut self,
         data: &[T],
         usage: vk::BufferUsageFlags,
-    ) -> Result<BufferHandle, GraphError> {
+    ) -> Result<Buffer, GraphError> {
         let bytes = bytemuck::cast_slice::<T, u8>(data);
         let size = bytes.len() as vk::DeviceSize;
         let device = self.device.ash_device().clone();
@@ -374,12 +375,12 @@ impl Graph {
         self.resources
             .destroy_buffer(&device, self.device.allocator_mut(), staging);
 
-        Ok(dst)
+        Ok(Buffer(dst))
     }
 
-    pub fn write_buffer<T: bytemuck::Pod>(&self, handle: BufferHandle, data: &[T]) {
+    pub fn write_buffer<T: bytemuck::Pod>(&self, handle: Buffer, data: &[T]) {
         self.resources
-            .get_buffer(handle)
+            .get_buffer(handle.0)
             .expect("write_buffer: invalid buffer handle")
             .write(data);
     }

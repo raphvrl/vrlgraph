@@ -1,7 +1,7 @@
 //! GPU resource management — buffers, images, pipelines, and samplers.
 //!
-//! All resources are referenced through opaque handles ([`BufferHandle`],
-//! [`ImageHandle`], [`PipelineHandle`], [`SamplerHandle`]). The underlying
+//! All resources are referenced through opaque handles ([`Buffer`],
+//! [`ImageHandle`], [`Pipeline`], [`SamplerHandle`]). The underlying
 //! objects are owned by the [`Graph`](crate::graph::Graph) and freed
 //! when you call the corresponding `destroy_*` method or when the graph
 //! is dropped.
@@ -28,7 +28,8 @@ pub enum ResourceError {
 }
 
 pub use buffer::{BufferDesc, GpuBuffer};
-pub use handle::{BufferHandle, ImageHandle, PipelineHandle, SamplerHandle};
+pub use handle::{Buffer, ImageHandle, Pipeline, SamplerHandle};
+pub(crate) use handle::{BufferHandle, PipelineHandle};
 pub use image::{GpuImage, ImageDesc, ImageKind};
 pub use pipeline::GpuPipeline;
 pub(crate) use pool::ResourcePool;

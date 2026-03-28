@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use ash::vk;
 
-use crate::resource::{GpuPipeline, PipelineHandle};
+use crate::resource::{GpuPipeline, Pipeline};
 
 #[cfg(debug_assertions)]
 use super::reload::{PipelineDesc, PipelineKind};
@@ -100,8 +100,8 @@ impl<'g> PipelineBuilder<'g> {
     }
 
     /// Compiles the pipeline and registers it with the graph.
-    /// Returns a [`PipelineHandle`] that can be passed to [`FrameResources::pipeline`](super::pass::FrameResources::pipeline).
-    pub fn build(self) -> Result<PipelineHandle, GraphError> {
+    /// Returns a [`Pipeline`] that can be passed to [`FrameResources::pipeline`](super::pass::FrameResources::pipeline).
+    pub fn build(self) -> Result<Pipeline, GraphError> {
         let vert_spv = self
             .vertex_spv
             .expect("PipelineBuilder: vertex_shader() is required");
@@ -231,7 +231,7 @@ impl<'g> PipelineBuilder<'g> {
             },
         );
 
-        Ok(handle)
+        Ok(Pipeline(handle))
     }
 }
 
@@ -270,7 +270,7 @@ impl<'g> ComputePipelineBuilder<'g> {
     }
 
     /// Compiles the pipeline and registers it with the graph.
-    pub fn build(self) -> Result<PipelineHandle, GraphError> {
+    pub fn build(self) -> Result<Pipeline, GraphError> {
         let spv = self
             .compute_spv
             .expect("ComputePipelineBuilder: shader() is required");
@@ -316,7 +316,7 @@ impl<'g> ComputePipelineBuilder<'g> {
             },
         );
 
-        Ok(handle)
+        Ok(Pipeline(handle))
     }
 }
 

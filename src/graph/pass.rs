@@ -3,7 +3,7 @@
 use ash::vk;
 
 use crate::resource::{
-    BufferHandle, GpuBuffer, GpuImage, GpuPipeline, PipelineHandle, ResourcePool,
+    Buffer, BufferHandle, GpuBuffer, GpuImage, GpuPipeline, Pipeline, ResourcePool,
     StreamingBufferHandle,
 };
 
@@ -107,7 +107,7 @@ impl sealed::Sealed for (Image, Access) {}
 impl sealed::Sealed for WithLoadOp {}
 impl sealed::Sealed for WithLayer {}
 impl sealed::Sealed for WithLayerLoadOp {}
-impl sealed::Sealed for (BufferHandle, BufferUsage) {}
+impl sealed::Sealed for (Buffer, BufferUsage) {}
 impl sealed::Sealed for (StreamingBufferHandle, BufferUsage) {}
 
 impl ReadParam for (Image, Access) {
@@ -195,17 +195,17 @@ impl WriteParam for WithLayerLoadOp {
     }
 }
 
-impl ReadParam for (BufferHandle, BufferUsage) {
+impl ReadParam for (Buffer, BufferUsage) {
     fn apply_read(self, ctx: &mut PassContext<'_>) {
         let (handle, usage) = self;
-        ctx.buffer_reads.push(BufferAccess::new(handle, usage));
+        ctx.buffer_reads.push(BufferAccess::new(handle.0, usage));
     }
 }
 
-impl WriteParam for (BufferHandle, BufferUsage) {
+impl WriteParam for (Buffer, BufferUsage) {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let (handle, usage) = self;
-        ctx.buffer_writes.push(BufferAccess::new(handle, usage));
+        ctx.buffer_writes.push(BufferAccess::new(handle.0, usage));
     }
 }
 
@@ -299,9 +299,9 @@ impl<'a> FrameResources<'a> {
     /// # Panics
     ///
     /// Panics if the handle is stale (buffer was destroyed before the frame ended).
-    pub fn buffer(&self, handle: crate::resource::BufferHandle) -> &GpuBuffer {
+    pub fn buffer(&self, handle: Buffer) -> &GpuBuffer {
         self.pool
-            .get_buffer(handle)
+            .get_buffer(handle.0)
             .expect("buffer handle stale — destroyed before frame end")
     }
 
@@ -317,9 +317,9 @@ impl<'a> FrameResources<'a> {
     }
 
     /// Returns the [`GpuPipeline`] for a pipeline handle.
-    pub fn pipeline(&self, handle: PipelineHandle) -> &GpuPipeline {
+    pub fn pipeline(&self, handle: Pipeline) -> &GpuPipeline {
         self.pool
-            .get_pipeline(handle)
+            .get_pipeline(handle.0)
             .expect("pipeline handle stale — destroyed before frame end")
     }
 

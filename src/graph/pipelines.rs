@@ -4,7 +4,7 @@ use super::pipeline::{ComputePipelineBuilder, PipelineBuilder};
 #[cfg(debug_assertions)]
 use super::reload::{PipelineDesc, PipelineKind};
 use super::{Graph, GraphError};
-use crate::resource::{GpuPipeline, PipelineHandle};
+use crate::resource::{GpuPipeline, Pipeline, PipelineHandle};
 
 impl Graph {
     pub fn graphics_pipeline(&mut self) -> PipelineBuilder<'_> {
@@ -15,9 +15,9 @@ impl Graph {
         ComputePipelineBuilder::new(self)
     }
 
-    pub fn destroy_pipeline(&mut self, handle: PipelineHandle) {
+    pub fn destroy_pipeline(&mut self, handle: Pipeline) {
         let device = self.device.ash_device().clone();
-        self.resources.destroy_pipeline(&device, handle);
+        self.resources.destroy_pipeline(&device, handle.0);
     }
 
     pub(in crate::graph) fn insert_pipeline(&mut self, pipeline: GpuPipeline) -> PipelineHandle {

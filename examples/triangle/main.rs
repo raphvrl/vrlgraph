@@ -8,7 +8,7 @@ use vrlgraph::prelude::*;
 struct State {
     graph: Graph,
     window: Window,
-    pipeline: PipelineHandle,
+    pipeline: Pipeline,
 }
 
 impl State {
