@@ -33,7 +33,7 @@ struct State {
 }
 
 impl State {
-    fn new(window: Window) -> Self {
+    fn new(window: Window) -> Result<Self, GraphError> {
         let size = window.inner_size();
 
         let mut graph = Graph::builder()
@@ -41,57 +41,47 @@ impl State {
             .size(size.width, size.height)
             .validation(cfg!(debug_assertions))
             .present_mode(PresentMode::Fifo)
-            .build()
-            .unwrap();
+            .build()?;
 
-        let storage_image = graph
-            .create_resizable(|ext| ImageDesc {
-                extent: vk::Extent3D {
-                    width: ext.width,
-                    height: ext.height,
-                    depth: 1,
-                },
-                format: vk::Format::R8G8B8A8_UNORM,
-                usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED,
-                label: "triangle_storage".to_string(),
-                ..Default::default()
-            })
-            .unwrap();
+        let storage_image = graph.create_resizable(|ext| ImageDesc {
+            extent: vk::Extent3D {
+                width: ext.width,
+                height: ext.height,
+                depth: 1,
+            },
+            format: vk::Format::R8G8B8A8_UNORM,
+            usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED,
+            label: "triangle_storage".to_string(),
+            ..Default::default()
+        })?;
 
-        let sampler = graph
-            .create_sampler(
-                &vk::SamplerCreateInfo::default()
-                    .mag_filter(vk::Filter::NEAREST)
-                    .min_filter(vk::Filter::NEAREST)
-                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
-            )
-            .unwrap();
+        let sampler = graph.create_sampler(
+            &vk::SamplerCreateInfo::default()
+                .mag_filter(vk::Filter::NEAREST)
+                .min_filter(vk::Filter::NEAREST)
+                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
+        )?;
 
         let compute_pipeline = graph
             .compute_pipeline()
-            .shader("shaders/fill.comp.spv")
-            .unwrap()
-            .build()
-            .unwrap();
+            .shader("shaders/fill.comp.spv")?
+            .build()?;
 
         let graphics_pipeline = graph
             .graphics_pipeline()
-            .vertex_shader("shaders/fullscreen.vert.spv")
-            .unwrap()
-            .fragment_shader("shaders/blit.frag.spv")
-            .unwrap()
-            .build()
-            .unwrap();
+            .vertex_shader("shaders/fullscreen.vert.spv")?
+            .fragment_shader("shaders/blit.frag.spv")?
+            .build()?;
 
-        Self {
+        Ok(Self {
             graph,
             window,
             compute_pipeline,
             graphics_pipeline,
             storage_image,
             sampler,
-        }
+        })
     }
 
     fn draw(&mut self) -> Result<(), GraphError> {
@@ -166,7 +156,14 @@ impl ApplicationHandler for App {
         let window = event_loop
             .create_window(Window::default_attributes())
             .unwrap();
-        self.state = Some(State::new(window));
+
+        match State::new(window) {
+            Ok(state) => self.state = Some(state),
+            Err(e) => {
+                tracing::error!("init error: {e}");
+                event_loop.exit();
+            }
+        }
     }
 
     fn window_event(

@@ -12,7 +12,7 @@ struct State {
 }
 
 impl State {
-    fn new(window: Window) -> Self {
+    fn new(window: Window) -> Result<Self, GraphError> {
         let size = window.inner_size();
 
         let mut graph = Graph::builder()
@@ -20,23 +20,19 @@ impl State {
             .size(size.width, size.height)
             .validation(cfg!(debug_assertions))
             .present_mode(PresentMode::Mailbox)
-            .build()
-            .unwrap();
+            .build()?;
 
         let pipeline = graph
             .graphics_pipeline()
-            .vertex_shader("shaders/triangle.vert.spv")
-            .unwrap()
-            .fragment_shader("shaders/triangle.frag.spv")
-            .unwrap()
-            .build()
-            .unwrap();
+            .vertex_shader("shaders/triangle.vert.spv")?
+            .fragment_shader("shaders/triangle.frag.spv")?
+            .build()?;
 
-        Self {
+        Ok(Self {
             graph,
             window,
             pipeline,
-        }
+        })
     }
 
     fn draw(&mut self) -> Result<(), GraphError> {
@@ -80,7 +76,13 @@ impl ApplicationHandler for App {
         let window = event_loop
             .create_window(Window::default_attributes())
             .unwrap();
-        self.state = Some(State::new(window));
+        match State::new(window) {
+            Ok(state) => self.state = Some(state),
+            Err(e) => {
+                tracing::error!("init error: {e}");
+                event_loop.exit();
+            }
+        }
     }
 
     fn window_event(

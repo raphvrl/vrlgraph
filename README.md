@@ -434,12 +434,12 @@ void main() {
 
 ### Buffers
 
-Structured buffers are accessed via Buffer Device Address (BDA). Storage buffers include `SHADER_DEVICE_ADDRESS` automatically. Retrieve the address with `buffer_device_address` and pass it as a `uint64_t` in the push constants.
+Structured buffers are accessed via Buffer Device Address (BDA). All buffers carry a device address — retrieve it with `buffer_device_address` and pass it as a `uint64_t` in the push constants.
 
 ```rust
 let buf = graph.storage_buffer("my_data", &data)?;
 
-let addr = graph.buffer_device_address(buf).unwrap();
+let addr = graph.buffer_device_address(buf);
 ```
 
 ```glsl

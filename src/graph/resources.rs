@@ -263,10 +263,11 @@ impl Graph {
         self.resources.get_buffer(handle.0)
     }
 
-    /// Returns the GPU virtual address of a buffer created with
-    /// [`vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS`], or `None` otherwise.
-    pub fn buffer_device_address(&self, handle: Buffer) -> Option<vk::DeviceAddress> {
-        self.resources.get_buffer(handle.0)?.device_address
+    pub fn buffer_device_address(&self, handle: Buffer) -> vk::DeviceAddress {
+        self.resources
+            .get_buffer(handle.0)
+            .expect("buffer_device_address: invalid handle")
+            .device_address
     }
 
     pub fn create_streaming_buffer(

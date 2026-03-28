@@ -57,7 +57,7 @@ struct State {
 }
 
 impl State {
-    fn new(window: Window) -> Self {
+    fn new(window: Window) -> Result<Self, GraphError> {
         let size = window.inner_size();
 
         let mut graph = Graph::builder()
@@ -65,28 +65,25 @@ impl State {
             .size(size.width, size.height)
             .validation(cfg!(debug_assertions))
             .present_mode(PresentMode::Fifo)
-            .build()
-            .unwrap();
+            .build()?;
 
-        let vertex_buf = graph.vertex_buffer("quad_verts", &VERTICES).unwrap();
+        let vertex_buf = graph.vertex_buffer("quad_verts", &VERTICES)?;
 
-        let index_buf = graph.index_buffer("quad_indices", &INDICES).unwrap();
+        let index_buf = graph.index_buffer("quad_indices", &INDICES)?;
 
         let transform = Transform {
             angle: 0.0,
             scale: 0.8,
         };
 
-        let transform_buf = graph.uniform_buffer("transform", &[transform]).unwrap();
+        let transform_buf = graph.uniform_buffer("transform", &[transform])?;
 
-        let colors_buf = graph.storage_buffer("colors", &COLORS).unwrap();
+        let colors_buf = graph.storage_buffer("colors", &COLORS)?;
 
         let pipeline = graph
             .graphics_pipeline()
-            .vertex_shader("shaders/mesh.vert.spv")
-            .unwrap()
-            .fragment_shader("shaders/mesh.frag.spv")
-            .unwrap()
+            .vertex_shader("shaders/mesh.vert.spv")?
+            .fragment_shader("shaders/mesh.frag.spv")?
             .vertex_input(
                 &[vk::VertexInputBindingDescription::default()
                     .binding(0)
@@ -98,10 +95,9 @@ impl State {
                     .format(vk::Format::R32G32_SFLOAT)
                     .offset(0)],
             )
-            .build()
-            .unwrap();
+            .build()?;
 
-        Self {
+        Ok(Self {
             graph,
             window,
             pipeline,
@@ -110,7 +106,7 @@ impl State {
             transform_buf,
             colors_buf,
             start: Instant::now(),
-        }
+        })
     }
 
     fn draw(&mut self) -> Result<(), GraphError> {
@@ -124,11 +120,8 @@ impl State {
 
         let frame = self.graph.begin_frame()?;
 
-        let transform_addr = self
-            .graph
-            .buffer_device_address(self.transform_buf)
-            .unwrap();
-        let colors_addr = self.graph.buffer_device_address(self.colors_buf).unwrap();
+        let transform_addr = self.graph.buffer_device_address(self.transform_buf);
+        let colors_addr = self.graph.buffer_device_address(self.colors_buf);
 
         let pipeline = self.pipeline;
         let vertex_buf = self.vertex_buf;
@@ -181,7 +174,13 @@ impl ApplicationHandler for App {
 
         let window = event_loop.create_window(window_attributes).unwrap();
 
-        self.state = Some(State::new(window));
+        match State::new(window) {
+            Ok(state) => self.state = Some(state),
+            Err(e) => {
+                tracing::error!("init error: {e}");
+                event_loop.exit();
+            }
+        }
     }
 
     fn window_event(

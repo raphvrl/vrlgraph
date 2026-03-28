@@ -34,9 +34,8 @@ pub struct GpuBuffer {
     pub size: vk::DeviceSize,
     /// Vulkan buffer usage flags.
     pub usage: vk::BufferUsageFlags,
-    /// GPU virtual address of this buffer, available when created with
-    /// [`vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS`].
-    pub device_address: Option<vk::DeviceAddress>,
+    /// GPU virtual address of this buffer for bindless access via push constants.
+    pub device_address: vk::DeviceAddress,
     allocation: Allocation,
 }
 
@@ -77,13 +76,9 @@ impl GpuBuffer {
             return Err(ResourceError::Vulkan(e));
         }
 
-        let device_address = desc
-            .usage
-            .contains(vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS)
-            .then(|| unsafe {
-                device
-                    .get_buffer_device_address(&vk::BufferDeviceAddressInfo::default().buffer(raw))
-            });
+        let device_address = unsafe {
+            device.get_buffer_device_address(&vk::BufferDeviceAddressInfo::default().buffer(raw))
+        };
 
         Ok(Self {
             raw,
