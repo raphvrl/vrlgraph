@@ -20,6 +20,7 @@ pub struct SwapchainConfig {
     pub present_family: u32,
     pub window_size: (u32, u32),
     pub preferred_present: vk::PresentModeKHR,
+    pub prefer_srgb: bool,
 }
 
 pub struct Swapchain {
@@ -153,10 +154,11 @@ impl Swapchain {
             present_family,
             window_size,
             preferred_present,
+            prefer_srgb,
         } = config;
 
         let capabilities = surface.capabilities(*physical_device)?;
-        let format = Self::choose_format(&surface.formats(*physical_device)?)?;
+        let format = Self::choose_format(&surface.formats(*physical_device)?, *prefer_srgb)?;
         let present_mode = Self::choose_present_mode(
             &surface.present_modes(*physical_device)?,
             *preferred_present,
@@ -205,12 +207,25 @@ impl Swapchain {
 
     fn choose_format(
         formats: &[vk::SurfaceFormatKHR],
+        prefer_srgb: bool,
     ) -> Result<vk::SurfaceFormatKHR, SwapchainError> {
+        let (preferred_format, fallback_format) = if prefer_srgb {
+            (vk::Format::B8G8R8A8_SRGB, vk::Format::B8G8R8A8_UNORM)
+        } else {
+            (vk::Format::B8G8R8A8_UNORM, vk::Format::B8G8R8A8_SRGB)
+        };
+
         formats
             .iter()
             .find(|f| {
-                f.format == vk::Format::B8G8R8A8_SRGB
+                f.format == preferred_format
                     && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+            })
+            .or_else(|| {
+                formats.iter().find(|f| {
+                    f.format == fallback_format
+                        && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+                })
             })
             .or_else(|| formats.first())
             .copied()

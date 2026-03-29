@@ -61,6 +61,7 @@ pub struct GpuDevice {
     properties: vk::PhysicalDeviceProperties,
     memory_properties: vk::PhysicalDeviceMemoryProperties,
     physical_device: vk::PhysicalDevice,
+    prefer_srgb: bool,
     allocator: Allocator,
     ext_dynamic_state3: ash::ext::extended_dynamic_state3::Device,
     debug_utils: Option<ash::ext::debug_utils::Device>,
@@ -77,6 +78,7 @@ impl GpuDevice {
         window_size: (u32, u32),
         preferred_present: vk::PresentModeKHR,
         prefer_integrated: bool,
+        prefer_srgb: bool,
     ) -> Result<Self, DeviceError> {
         let instance = Instance::new(validation)?;
 
@@ -132,6 +134,7 @@ impl GpuDevice {
                 present_family,
                 window_size,
                 preferred_present,
+                prefer_srgb,
             },
         )?;
 
@@ -152,6 +155,7 @@ impl GpuDevice {
             properties,
             memory_properties,
             physical_device,
+            prefer_srgb,
             allocator,
             ext_dynamic_state3,
             debug_utils,
@@ -176,6 +180,7 @@ impl GpuDevice {
                     present_family: self.present_family,
                     window_size,
                     preferred_present,
+                    prefer_srgb: self.prefer_srgb,
                 },
             )
             .map_err(Into::into)
