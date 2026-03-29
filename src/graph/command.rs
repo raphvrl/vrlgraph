@@ -348,7 +348,10 @@ impl Cmd {
             self.bound_bind_point == vk::PipelineBindPoint::COMPUTE,
             "Cmd: bind_compute_pipeline() must be called before dispatch_indirect()"
         );
-        unsafe { self.device.cmd_dispatch_indirect(self.raw, buffer.raw, offset) };
+        unsafe {
+            self.device
+                .cmd_dispatch_indirect(self.raw, buffer.raw, offset)
+        };
     }
 
     pub fn clear_color(&self, image: vk::Image, color: [f32; 4]) {

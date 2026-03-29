@@ -14,8 +14,8 @@ pub use vrlgraph_derive::VertexInput;
 pub mod prelude {
 
     pub use crate::graph::{
-        Access, Array2D, BindlessIndex, BufferUsage, Cubemap, Frame, Graph, GraphError,
-        GpuPreference, Image, LoadOp, PassTiming, PresentMode, Sampled, Sampler, Storage,
+        Access, Array2D, BindlessIndex, BufferUsage, Cubemap, Frame, GpuPreference, Graph,
+        GraphError, Image, LoadOp, PassTiming, PresentMode, Sampled, Sampler, Storage,
         StreamingBufferHandle, WithLayer, WithLayerLoadOp, WithLoadOp,
     };
 

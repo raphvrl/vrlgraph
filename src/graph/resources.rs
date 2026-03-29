@@ -333,7 +333,11 @@ impl Graph {
         Ok(())
     }
 
-    fn create_staging(&mut self, data: &[u8], label: &str) -> Result<crate::resource::BufferHandle, GraphError> {
+    fn create_staging(
+        &mut self,
+        data: &[u8],
+        label: &str,
+    ) -> Result<crate::resource::BufferHandle, GraphError> {
         let device = self.device.ash_device().clone();
         let handle = self.resources.create_buffer(
             &device,
@@ -345,7 +349,10 @@ impl Graph {
                 label: label.to_string(),
             },
         )?;
-        let buf = self.resources.get_buffer(handle).expect("buffer just created");
+        let buf = self
+            .resources
+            .get_buffer(handle)
+            .expect("buffer just created");
         let ptr = buf.mapped_ptr().expect("staging buffer not host visible");
         unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len()) };
         Ok(handle)
@@ -353,7 +360,8 @@ impl Graph {
 
     fn destroy_staging(&mut self, handle: crate::resource::BufferHandle) {
         let device = self.device.ash_device().clone();
-        self.resources.destroy_buffer(&device, self.device.allocator_mut(), handle);
+        self.resources
+            .destroy_buffer(&device, self.device.allocator_mut(), handle);
     }
 
     pub(crate) fn upload_buffer_labeled(
@@ -378,8 +386,16 @@ impl Graph {
             },
         )?;
 
-        let src_raw = self.resources.get_buffer(staging).expect("buffer just created").raw;
-        let dst_raw = self.resources.get_buffer(dst).expect("buffer just created").raw;
+        let src_raw = self
+            .resources
+            .get_buffer(staging)
+            .expect("buffer just created")
+            .raw;
+        let dst_raw = self
+            .resources
+            .get_buffer(dst)
+            .expect("buffer just created")
+            .raw;
         self.one_shot_submit(|cmd| cmd.copy_buffer_to_buffer(src_raw, dst_raw, size))?;
         self.destroy_staging(staging);
 
@@ -570,8 +586,16 @@ impl Graph {
     ) -> Result<(), GraphError> {
         let staging = self.create_staging(pixels, "staging_upload")?;
 
-        let vk_img = self.resources.get_image(dst).expect("image just created").raw;
-        let stg_buf = self.resources.get_buffer(staging).expect("buffer just created").raw;
+        let vk_img = self
+            .resources
+            .get_image(dst)
+            .expect("image just created")
+            .raw;
+        let stg_buf = self
+            .resources
+            .get_buffer(staging)
+            .expect("buffer just created")
+            .raw;
 
         self.one_shot_submit(|cmd| {
             cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()

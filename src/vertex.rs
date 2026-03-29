@@ -26,30 +26,30 @@ macro_rules! impl_attr {
     };
 }
 
-impl_attr!(f32,      R32_SFLOAT);
+impl_attr!(f32, R32_SFLOAT);
 impl_attr!([f32; 2], R32G32_SFLOAT);
 impl_attr!([f32; 3], R32G32B32_SFLOAT);
 impl_attr!([f32; 4], R32G32B32A32_SFLOAT);
 
-impl_attr!(u32,      R32_UINT);
+impl_attr!(u32, R32_UINT);
 impl_attr!([u32; 2], R32G32_UINT);
 impl_attr!([u32; 3], R32G32B32_UINT);
 impl_attr!([u32; 4], R32G32B32A32_UINT);
 
-impl_attr!(i32,      R32_SINT);
+impl_attr!(i32, R32_SINT);
 impl_attr!([i32; 2], R32G32_SINT);
 impl_attr!([i32; 3], R32G32B32_SINT);
 impl_attr!([i32; 4], R32G32B32A32_SINT);
 
-impl_attr!([u8; 4],  R8G8B8A8_UNORM);
+impl_attr!([u8; 4], R8G8B8A8_UNORM);
 
 #[cfg(feature = "glam")]
 mod glam_impls {
     use super::*;
 
-    impl_attr!(glam::Vec2,  R32G32_SFLOAT);
-    impl_attr!(glam::Vec3,  R32G32B32_SFLOAT);
-    impl_attr!(glam::Vec4,  R32G32B32A32_SFLOAT);
+    impl_attr!(glam::Vec2, R32G32_SFLOAT);
+    impl_attr!(glam::Vec3, R32G32B32_SFLOAT);
+    impl_attr!(glam::Vec4, R32G32B32A32_SFLOAT);
 
     impl_attr!(glam::UVec2, R32G32_UINT);
     impl_attr!(glam::UVec3, R32G32B32_UINT);

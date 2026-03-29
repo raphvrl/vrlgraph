@@ -110,7 +110,12 @@ impl sealed::Sealed for WithLayerLoadOp {}
 impl sealed::Sealed for (Buffer, BufferUsage) {}
 impl sealed::Sealed for (StreamingBufferHandle, BufferUsage) {}
 
-fn make_write_access(image: Image, access: Access, load_op: LoadOp, layer: Option<u32>) -> PassAccess {
+fn make_write_access(
+    image: Image,
+    access: Access,
+    load_op: LoadOp,
+    layer: Option<u32>,
+) -> PassAccess {
     PassAccess {
         image,
         layout: access.layout(),
@@ -144,7 +149,8 @@ impl WriteParam for (Image, Access) {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let (image, access) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes.push(make_write_access(image, access, LoadOp::Auto, None));
+        ctx.writes
+            .push(make_write_access(image, access, LoadOp::Auto, None));
     }
 }
 
@@ -152,7 +158,8 @@ impl WriteParam for WithLoadOp {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLoadOp(image, access, load_op) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes.push(make_write_access(image, access, load_op, None));
+        ctx.writes
+            .push(make_write_access(image, access, load_op, None));
     }
 }
 
@@ -160,7 +167,8 @@ impl WriteParam for WithLayer {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLayer(image, access, layer) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes.push(make_write_access(image, access, LoadOp::Auto, Some(layer)));
+        ctx.writes
+            .push(make_write_access(image, access, LoadOp::Auto, Some(layer)));
     }
 }
 
@@ -168,7 +176,8 @@ impl WriteParam for WithLayerLoadOp {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLayerLoadOp(image, access, load_op, layer) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes.push(make_write_access(image, access, load_op, Some(layer)));
+        ctx.writes
+            .push(make_write_access(image, access, load_op, Some(layer)));
     }
 }
 
