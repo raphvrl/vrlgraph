@@ -128,7 +128,7 @@ pub(crate) struct FrameData {
 /// ```rust,no_run
 /// use vrlgraph::prelude::*;
 ///
-/// # fn example(window: &impl raw_window_handle::HasWindowHandle) -> Result<(), GraphError> {
+/// # fn example(window: &(impl raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle)) -> Result<(), GraphError> {
 /// let mut graph = Graph::builder()
 ///     .window(window)
 ///     .size(1280, 720)
