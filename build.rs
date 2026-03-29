@@ -3,6 +3,14 @@ use std::process::Command;
 
 fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let examples_dir = manifest_dir.join("examples");
+
+    println!("cargo:rerun-if-changed={}", examples_dir.display());
+
+    if !examples_dir.is_dir() {
+        return;
+    }
+
     let profile = std::env::var("PROFILE").unwrap();
 
     let shaders_out = manifest_dir
@@ -11,12 +19,7 @@ fn main() {
         .join("examples")
         .join("shaders");
 
-    std::fs::create_dir_all(&shaders_out).expect("failed to create shader output directory");
-
-    let examples_dir = manifest_dir.join("examples");
-
-    // Rerun if a new example directory is added.
-    println!("cargo:rerun-if-changed={}", examples_dir.display());
+    let mut needs_compile = false;
 
     for entry in std::fs::read_dir(&examples_dir).expect("failed to read examples dir") {
         let example_dir = entry.unwrap().path();
@@ -29,7 +32,6 @@ fn main() {
             continue;
         }
 
-        // Watch the directory itself so that adding a new .glsl file triggers a rebuild.
         println!("cargo:rerun-if-changed={}", shaders_src.display());
 
         for shader_entry in std::fs::read_dir(&shaders_src).unwrap() {
@@ -40,6 +42,35 @@ fn main() {
             }
 
             println!("cargo:rerun-if-changed={}", shader_path.display());
+            needs_compile = true;
+        }
+    }
+
+    if !needs_compile {
+        return;
+    }
+
+    let glslc = which_glslc();
+
+    std::fs::create_dir_all(&shaders_out).expect("failed to create shader output directory");
+
+    for entry in std::fs::read_dir(&examples_dir).unwrap() {
+        let example_dir = entry.unwrap().path();
+        if !example_dir.is_dir() {
+            continue;
+        }
+
+        let shaders_src = example_dir.join("shaders");
+        if !shaders_src.is_dir() {
+            continue;
+        }
+
+        for shader_entry in std::fs::read_dir(&shaders_src).unwrap() {
+            let shader_path = shader_entry.unwrap().path();
+
+            if shader_path.extension().and_then(|e| e.to_str()) != Some("glsl") {
+                continue;
+            }
 
             let stem = shader_path.file_stem().unwrap().to_str().unwrap();
             let spv_out = shaders_out.join(format!("{stem}.spv"));
@@ -62,14 +93,14 @@ fn main() {
                 ),
             };
 
-            let status = Command::new("glslc")
+            let status = Command::new(&glslc)
                 .arg("--target-env=vulkan1.2")
                 .arg(format!("-fshader-stage={stage}"))
                 .arg(&shader_path)
                 .arg("-o")
                 .arg(&spv_out)
                 .status()
-                .expect("glslc not found — install the Vulkan SDK and ensure it is in PATH");
+                .expect("failed to run glslc");
 
             assert!(
                 status.success(),
@@ -78,4 +109,25 @@ fn main() {
             );
         }
     }
+}
+
+fn which_glslc() -> PathBuf {
+    let candidates = ["glslc", "glslc.exe"];
+    for name in candidates {
+        if Command::new(name).arg("--version").output().is_ok() {
+            return PathBuf::from(name);
+        }
+    }
+
+    if let Ok(sdk) = std::env::var("VULKAN_SDK") {
+        let path = PathBuf::from(sdk).join("Bin").join("glslc.exe");
+        if path.exists() {
+            return path;
+        }
+    }
+
+    panic!(
+        "glslc not found — install the Vulkan SDK and ensure it is in PATH, \
+         or set the VULKAN_SDK environment variable"
+    );
 }

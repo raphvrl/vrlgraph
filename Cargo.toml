@@ -6,6 +6,9 @@ resolver = "2"
 name = "vrlgraph"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "A Vulkan render graph library for Rust, built on ash"
+repository = "https://github.com/raphvrl/vrlgraph"
 
 [features]
 glam = ["dep:glam"]

@@ -6,6 +6,13 @@ vrlgraph is not a game engine, a scene graph, or a material system. It is a thin
 
 ---
 
+## Prerequisites
+
+- **Rust 1.85+** (edition 2024)
+- **Vulkan SDK**
+
+---
+
 ## Installation
 
 ```toml
@@ -13,9 +20,50 @@ vrlgraph is not a game engine, a scene graph, or a material system. It is a thin
 vrlgraph = { git = "https://github.com/raphvrl/vrlgraph" }
 ```
 
-`ash` are re-exported from vrlgraph, so you do not need to declare them as separate dependencies.
+`ash` is re-exported from vrlgraph, so you do not need to declare it as a separate dependency.
 
 Shaders must be compiled to SPIR-V before being passed to the pipeline builders. vrlgraph loads them from the filesystem at the paths you provide.
+
+---
+
+## Quick start
+
+```rust
+use vrlgraph::prelude::*;
+
+let mut graph = Graph::builder()
+    .window(&window)
+    .size(1280, 720)
+    .build()?;
+
+let pipeline = graph
+    .graphics_pipeline()
+    .vertex_shader("shaders/triangle.vert.spv")?
+    .fragment_shader("shaders/triangle.frag.spv")?
+    .build()?;
+
+loop {
+    let frame = match graph.begin_frame() {
+        Ok(f) => f,
+        Err(GraphError::SwapchainOutOfDate) => {
+            let size = window.inner_size();
+            graph.resize(size.width, size.height);
+            continue;
+        }
+        Err(e) => return Err(e),
+    };
+
+    graph.render_pass("main")
+        .write((frame.backbuffer, Access::ColorAttachment))
+        .execute(move |cmd, res| {
+            cmd.bind_graphics_pipeline(res.pipeline(pipeline));
+            cmd.set_viewport_scissor(frame.extent);
+            cmd.draw(3, 1);
+        });
+
+    graph.end_frame()?;
+}
+```
 
 ---
 
