@@ -28,7 +28,7 @@ Shaders must be compiled to SPIR-V before being passed to the pipeline builders.
 
 ## Quick start
 
-```rust
+```rust,ignore
 use vrlgraph::prelude::*;
 
 let mut graph = Graph::builder()
@@ -71,7 +71,7 @@ loop {
 
 The central type is `Graph`. It owns the Vulkan device, the swapchain, all GPU resources, and the frame timeline. You interact with it by declaring passes, describing which images and buffers each pass reads and writes, and providing a closure that records GPU commands. The graph executes them in dependency order with the correct synchronization automatically inserted.
 
-```rust
+```rust,ignore
 use vrlgraph::prelude::*;
 
 let mut graph = Graph::builder()
@@ -89,7 +89,7 @@ Each frame starts with `begin_frame` and ends with `end_frame`. Between those tw
 
 `begin_frame` returns a `Frame` that gives you the current backbuffer handle, the swapchain extent, the frame index, and a flag indicating whether the window was just resized.
 
-```rust
+```rust,ignore
 let frame = graph.begin_frame()?;
 
 // declare passes here
@@ -99,7 +99,7 @@ graph.end_frame()?;
 
 If the swapchain is out of date (e.g. the window was minimized and restored), `begin_frame` returns `GraphError::SwapchainOutOfDate`. The standard response is to call `graph.resize(width, height)` and skip the current frame.
 
-```rust
+```rust,ignore
 match graph.begin_frame() {
     Ok(frame) => { /* record passes */ }
     Err(GraphError::SwapchainOutOfDate) => {
@@ -125,7 +125,7 @@ match graph.begin_frame() {
 
 A pass is a named unit of GPU work. You declare it with `render_pass` or `compute_pass`, describe its image and buffer accesses, and record its commands in a closure.
 
-```rust
+```rust,ignore
 graph.render_pass("lighting")
     .read((gbuffer_color,   Access::ShaderRead))
     .read((gbuffer_normals, Access::ShaderRead))
@@ -141,7 +141,7 @@ The graph uses the declared accesses to determine pass order and insert the requ
 
 `render_pass` is for fragment shader work. A pass that writes a color or depth attachment will have dynamic rendering (`VK_KHR_dynamic_rendering`) set up automatically for the images it writes.
 
-```rust
+```rust,ignore
 graph.render_pass("shadow_map")
     .write((shadow_atlas, Access::DepthAttachment))
     .execute(move |cmd, res| {
@@ -157,7 +157,7 @@ graph.render_pass("shadow_map")
 
 `compute_pass` is for compute shader work. Dynamic rendering is not started for compute passes.
 
-```rust
+```rust,ignore
 graph.compute_pass("blur")
     .read((hdr_output,   Access::ComputeRead))
     .write((blur_result, Access::ComputeWrite))
@@ -171,7 +171,7 @@ graph.compute_pass("blur")
 
 By default, attachments written with `Access::ColorAttachment` or `Access::DepthAttachment` are cleared at the start of the pass. You can override this with `LoadOp`.
 
-```rust
+```rust,ignore
 // Clear the attachment (default)
 .write((target, Access::ColorAttachment))
 
@@ -186,7 +186,7 @@ By default, attachments written with `Access::ColorAttachment` or `Access::Depth
 
 To write a single layer of an array image, use `WithLayer` or `WithLayerLoadOp`.
 
-```rust
+```rust,ignore
 // Write layer 2 of a cubemap face
 .write(WithLayer(cubemap, Access::ColorAttachment, 2))
 
@@ -198,7 +198,7 @@ To write a single layer of an array image, use `WithLayer` or `WithLayerLoadOp`.
 
 For multiview rendering (e.g. VR), call `.multiview(view_mask)` before `.execute`.
 
-```rust
+```rust,ignore
 graph.render_pass("stereo_geometry")
     .write((stereo_target, Access::ColorAttachment))
     .multiview(0b11) // views 0 and 1
@@ -243,7 +243,7 @@ graph.render_pass("stereo_geometry")
 
 Transient images live for a single frame. The graph allocates and destroys them automatically. Use them for intermediate results that are not needed across frames.
 
-```rust
+```rust,ignore
 let gbuffer_albedo = graph.create_transient(ImageDesc {
     extent: vk::Extent3D { width: 1920, height: 1080, depth: 1 },
     format: vk::Format::R8G8B8A8_UNORM,
@@ -256,7 +256,7 @@ let gbuffer_albedo = graph.create_transient(ImageDesc {
 
 Persistent images survive across frames and must be destroyed manually. Use them for render targets you allocate once at startup (shadow maps, lookup tables, etc.).
 
-```rust
+```rust,ignore
 let shadow_atlas = graph.create_persistent(ImageDesc {
     extent: vk::Extent3D { width: 4096, height: 4096, depth: 1 },
     format: vk::Format::D32_SFLOAT,
@@ -272,7 +272,7 @@ graph.destroy_image(shadow_atlas);
 
 Resizable images are persistent images whose descriptor is a function of the swapchain extent. They are automatically recreated when the window is resized.
 
-```rust
+```rust,ignore
 let hdr_buffer = graph.create_resizable(|ext| ImageDesc {
     extent: vk::Extent3D { width: ext.width, height: ext.height, depth: 1 },
     format: vk::Format::R16G16B16A16_SFLOAT,
@@ -286,7 +286,7 @@ let hdr_buffer = graph.create_resizable(|ext| ImageDesc {
 
 `load_texture` decodes a PNG or JPEG file and uploads it to a GPU image. The image is persistent.
 
-```rust
+```rust,ignore
 let albedo = graph.load_texture("assets/wood_albedo.png")?;
 ```
 
@@ -306,7 +306,7 @@ let albedo = graph.load_texture("assets/wood_albedo.png")?;
 
 ### ImageKind
 
-```rust
+```rust,ignore
 ImageKind::Image2D                        // standard 2D texture
 ImageKind::Image2DArray { layers: 6 }     // array of 2D textures
 ImageKind::Cubemap                        // 6-face cubemap
@@ -321,7 +321,7 @@ ImageKind::CubemapArray { count: 4 }      // array of cubemaps
 
 The typed methods handle usage flags and memory location automatically.
 
-```rust
+```rust,ignore
 // Storage buffer (CpuToGpu) — SHADER_DEVICE_ADDRESS included automatically
 let params = graph.storage_buffer("params", &data)?;
 
@@ -344,7 +344,7 @@ let scratch = graph.storage_buffer_empty("scratch", 1 << 20)?;
 
 For cases that need custom usage flags or memory location, `create_buffer` and `upload_buffer` remain available.
 
-```rust
+```rust,ignore
 let buf = graph.create_buffer(&BufferDesc {
     size: 1024,
     usage: vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER,
@@ -357,7 +357,7 @@ let buf = graph.create_buffer(&BufferDesc {
 
 Streaming buffers maintain one slot per frame in flight, so you can write to the current frame's slot from the CPU while the GPU reads from the previous frame's slot — no explicit synchronization needed.
 
-```rust
+```rust,ignore
 let per_frame_buf = graph.create_streaming_buffer(
     std::mem::size_of::<PerFrameData>() as u64,
     vk::BufferUsageFlags::UNIFORM_BUFFER,
@@ -368,7 +368,7 @@ let per_frame_buf = graph.create_streaming_buffer(
 
 Inside the frame loop, access the current slot through `FrameResources`:
 
-```rust
+```rust,ignore
 .execute(move |cmd, res| {
     let buf = res.streaming_buffer(per_frame_buf);
     buf.write(std::slice::from_ref(&per_frame_data));
@@ -384,7 +384,7 @@ Inside the frame loop, access the current slot through `FrameResources`:
 
 Derive `VertexInput` on your vertex struct. The macro generates the binding and attribute descriptions automatically from the field types, using `offset_of!` for offsets and inferring the Vulkan format from the Rust type.
 
-```rust
+```rust,ignore
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
 struct Vertex {
@@ -423,7 +423,7 @@ Enable the `glam` feature to add automatic format inference for `glam::Vec2/3/4`
 
 Use `#[format(FORMAT)]` on a field when the type cannot be inferred automatically:
 
-```rust
+```rust,ignore
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
 struct Vertex {
@@ -435,7 +435,7 @@ struct Vertex {
 
 Use `#[vertex_input(rate = instance)]` on the struct for per-instance data:
 
-```rust
+```rust,ignore
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
 #[vertex_input(rate = instance)]
@@ -455,7 +455,7 @@ All pipelines share the single global pipeline layout (set 0 = bindless table, 2
 
 ### Compute pipelines
 
-```rust
+```rust,ignore
 let pipeline = graph
     .compute_pipeline()
     .shader("shaders/tonemap.comp.spv")?
@@ -466,7 +466,7 @@ let pipeline = graph
 
 Pass a path to `pipeline_cache_path` on the builder to persist the Vulkan pipeline cache to disk. This reduces compilation time on subsequent runs.
 
-```rust
+```rust,ignore
 let graph = Graph::builder()
     .window(&window)
     .size(1280, 720)
@@ -502,7 +502,7 @@ Images are routed to the correct binding automatically based on `ImageKind` and 
 
 `STORAGE` images always go to binding 1 regardless of kind. On resize, all bindless slots are updated automatically.
 
-```rust
+```rust,ignore
 .execute(move |cmd, res| {
     let idx: BindlessIndex<Sampled> = res.sampled_index(tex2d);   // binding 0
     let idx: BindlessIndex<Storage> = res.storage_index(target);  // binding 1
@@ -540,7 +540,7 @@ void main() {
 
 Structured buffers are accessed via Buffer Device Address (BDA). All buffers carry a device address — retrieve it with `buffer_device_address` and pass it as a `uint64_t` in the push constants.
 
-```rust
+```rust,ignore
 let buf = graph.storage_buffer("my_data", &data)?;
 
 let addr = graph.buffer_device_address(buf);
@@ -568,7 +568,7 @@ The `Cmd` type is the command recorder passed to every pass closure. It wraps th
 
 ### Pipelines and state
 
-```rust
+```rust,ignore
 cmd.bind_graphics_pipeline(res.pipeline(pipeline));
 cmd.bind_compute_pipeline(res.pipeline(compute_pipeline));
 
@@ -581,7 +581,7 @@ cmd.set_scissor(vk::Rect2D { offset: vk::Offset2D::default(), extent: frame.exte
 
 The pipeline uses extended dynamic state. These values can change between draw calls without rebuilding the pipeline.
 
-```rust
+```rust,ignore
 cmd.set_cull_mode(vk::CullModeFlags::BACK);
 cmd.set_front_face(vk::FrontFace::COUNTER_CLOCKWISE);
 cmd.set_depth_test_enable(true);
@@ -592,7 +592,7 @@ cmd.set_polygon_mode(vk::PolygonMode::FILL);
 
 To set color blending for all attachments at once with additive defaults:
 
-```rust
+```rust,ignore
 cmd.set_default_blend_state(attachment_count);
 ```
 
@@ -600,7 +600,7 @@ cmd.set_default_blend_state(attachment_count);
 
 Pass the `&GpuBuffer` reference from `FrameResources` directly — no `.raw` unwrapping needed.
 
-```rust
+```rust,ignore
 cmd.bind_vertex_buffer(res.buffer(vertex_buf), 0);
 cmd.bind_index_buffer(res.buffer(index_buf), 0);
 ```
@@ -611,7 +611,7 @@ Push constants are the sole mechanism to pass bindless indices, BDA pointers, an
 
 Pass any `Pod` value directly — no manual byte conversion needed:
 
-```rust
+```rust,ignore
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct DrawPush {
@@ -627,7 +627,7 @@ For dynamic payloads assembled at runtime (e.g. a `Vec<u8>` slice), use `push_co
 
 ### Draw and dispatch commands
 
-```rust
+```rust,ignore
 cmd.draw(vertex_count, instance_count);
 cmd.draw_indexed(index_count, instance_count, first_index, vertex_offset);
 cmd.draw_indirect(res.buffer(indirect_buf), 0, draw_count, stride);
@@ -641,7 +641,7 @@ cmd.dispatch_indirect(res.buffer(indirect_buf), 0);
 
 Debug markers appear in tools like RenderDoc and Nsight. They have no runtime cost in release builds when the validation layer is disabled.
 
-```rust
+```rust,ignore
 cmd.begin_debug_group("shadow pass", [1.0, 0.5, 0.0, 1.0]);
 // ... draw calls
 cmd.end_debug_group();
@@ -655,7 +655,7 @@ cmd.insert_debug_label("barrier point", [0.0, 1.0, 0.0, 1.0]);
 
 Samplers are created from a standard `VkSamplerCreateInfo`. `create_sampler` returns a `Sampler` that bundles the handle (for `destroy_sampler`) with the bindless index to pass to shaders via push constants.
 
-```rust
+```rust,ignore
 let sampler = graph.create_sampler(
     &vk::SamplerCreateInfo::default()
         .mag_filter(vk::Filter::LINEAR)
@@ -677,7 +677,7 @@ graph.destroy_sampler(sampler);
 
 The graph inserts GPU timestamp queries around each pass. After `end_frame` returns, `pass_timings` gives you the GPU execution time of every pass in the previous frame.
 
-```rust
+```rust,ignore
 graph.end_frame()?;
 
 for timing in graph.pass_timings() {
@@ -698,7 +698,7 @@ for timing in graph.pass_timings() {
 
 `GraphBuilder` accepts the following options before calling `build`.
 
-```rust
+```rust,ignore
 let graph = Graph::builder()
     .window(&window)                        // required: window handle
     .size(1280, 720)                        // required: initial surface size
@@ -739,7 +739,7 @@ Call `graph.resize(width, height)` when the window size changes. The graph recre
 
 In debug builds, `reload_shaders` recompiles all pipelines from their source SPIR-V files on disk. Useful when combined with a file watcher to iterate on shaders without restarting the application.
 
-```rust
+```rust,ignore
 #[cfg(debug_assertions)]
 graph.reload_shaders()?;
 ```
