@@ -27,7 +27,7 @@ pub struct PassSetup<'g> {
 }
 
 impl<'g> PassSetup<'g> {
-    pub fn read(mut self, param: impl ReadParam) -> Self {
+    fn with_ctx(&mut self, f: impl FnOnce(&mut PassContext<'_>)) {
         let graph = &mut *self.graph;
         let mut ctx = PassContext {
             reads: &mut self.reads,
@@ -38,22 +38,16 @@ impl<'g> PassSetup<'g> {
             frame_index: graph.frame_index,
             resources: &graph.resources,
         };
-        param.apply_read(&mut ctx);
+        f(&mut ctx);
+    }
+
+    pub fn read(mut self, param: impl ReadParam) -> Self {
+        self.with_ctx(|ctx| param.apply_read(ctx));
         self
     }
 
     pub fn write(mut self, param: impl WriteParam) -> Self {
-        let graph = &mut *self.graph;
-        let mut ctx = PassContext {
-            reads: &mut self.reads,
-            writes: &mut self.writes,
-            buffer_reads: &mut self.buffer_reads,
-            buffer_writes: &mut self.buffer_writes,
-            images: &mut graph.images,
-            frame_index: graph.frame_index,
-            resources: &graph.resources,
-        };
-        param.apply_write(&mut ctx);
+        self.with_ctx(|ctx| param.apply_write(ctx));
         self
     }
 

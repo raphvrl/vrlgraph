@@ -8,7 +8,7 @@ use crate::resource::{
 };
 
 use super::access::{Access, BufferUsage, LoadOp};
-use super::bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Storage};
+use super::bindless::Sampler;
 use super::command::Cmd;
 use super::image::{Image, ImageEntry};
 
@@ -110,6 +110,19 @@ impl sealed::Sealed for WithLayerLoadOp {}
 impl sealed::Sealed for (Buffer, BufferUsage) {}
 impl sealed::Sealed for (StreamingBufferHandle, BufferUsage) {}
 
+fn make_write_access(image: Image, access: Access, load_op: LoadOp, layer: Option<u32>) -> PassAccess {
+    PassAccess {
+        image,
+        layout: access.layout(),
+        stage: access.stage(),
+        access: access.flags(),
+        is_color: access.is_color_attachment(),
+        is_depth: access.is_depth_attachment(),
+        load_op,
+        layer,
+    }
+}
+
 impl ReadParam for (Image, Access) {
     fn apply_read(self, ctx: &mut PassContext<'_>) {
         let (image, access) = self;
@@ -131,16 +144,7 @@ impl WriteParam for (Image, Access) {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let (image, access) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes.push(PassAccess {
-            image,
-            layout: access.layout(),
-            stage: access.stage(),
-            access: access.flags(),
-            is_color: access.is_color_attachment(),
-            is_depth: access.is_depth_attachment(),
-            load_op: LoadOp::Auto,
-            layer: None,
-        });
+        ctx.writes.push(make_write_access(image, access, LoadOp::Auto, None));
     }
 }
 
@@ -148,16 +152,7 @@ impl WriteParam for WithLoadOp {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLoadOp(image, access, load_op) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes.push(PassAccess {
-            image,
-            layout: access.layout(),
-            stage: access.stage(),
-            access: access.flags(),
-            is_color: access.is_color_attachment(),
-            is_depth: access.is_depth_attachment(),
-            load_op,
-            layer: None,
-        });
+        ctx.writes.push(make_write_access(image, access, load_op, None));
     }
 }
 
@@ -165,16 +160,7 @@ impl WriteParam for WithLayer {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLayer(image, access, layer) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes.push(PassAccess {
-            image,
-            layout: access.layout(),
-            stage: access.stage(),
-            access: access.flags(),
-            is_color: access.is_color_attachment(),
-            is_depth: access.is_depth_attachment(),
-            load_op: LoadOp::Auto,
-            layer: Some(layer),
-        });
+        ctx.writes.push(make_write_access(image, access, LoadOp::Auto, Some(layer)));
     }
 }
 
@@ -182,16 +168,7 @@ impl WriteParam for WithLayerLoadOp {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLayerLoadOp(image, access, load_op, layer) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes.push(PassAccess {
-            image,
-            layout: access.layout(),
-            stage: access.stage(),
-            access: access.flags(),
-            is_color: access.is_color_attachment(),
-            is_depth: access.is_depth_attachment(),
-            load_op,
-            layer: Some(layer),
-        });
+        ctx.writes.push(make_write_access(image, access, load_op, Some(layer)));
     }
 }
 
@@ -323,40 +300,52 @@ impl<'a> FrameResources<'a> {
             .expect("pipeline handle stale — destroyed before frame end")
     }
 
-    /// Returns the bindless sampled image index for use in push constants.
+    /// Returns the bindless sampled image index as a `u32` ready for push constants.
     ///
-    /// The image must have been created with `SAMPLED` usage.
-    pub fn sampled_index(&self, handle: Image) -> BindlessIndex<Sampled> {
+    /// The image must have been created with `SAMPLED` usage (e.g. via
+    /// [`Graph::load_texture`](crate::graph::Graph::load_texture) or with
+    /// `vk::ImageUsageFlags::SAMPLED`).
+    pub fn sampled_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .sampled_index
             .expect("image has no bindless sampled index — was it created with SAMPLED usage?")
+            .raw()
     }
 
-    /// Returns the bindless storage image index for use in push constants.
+    /// Returns the bindless storage image index as a `u32` ready for push constants.
     ///
-    /// The image must have been created with `STORAGE` usage.
-    pub fn storage_index(&self, handle: Image) -> BindlessIndex<Storage> {
+    /// The image must have been created with `vk::ImageUsageFlags::STORAGE`.
+    pub fn storage_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .storage_index
             .expect("image has no bindless storage index — was it created with STORAGE usage?")
+            .raw()
     }
 
-    /// Returns the bindless cubemap index (binding 3) for use in push constants.
+    /// Returns the bindless cubemap index as a `u32` ready for push constants.
     ///
-    /// The image must have been created with `ImageKind::Cubemap` (or `CubemapArray`)
-    /// and `SAMPLED` usage.
-    pub fn cubemap_index(&self, handle: Image) -> BindlessIndex<Cubemap> {
+    /// The image must have been created with [`ImageKind::Cubemap`](crate::resource::ImageKind::Cubemap)
+    /// (or `CubemapArray`) and `vk::ImageUsageFlags::SAMPLED`.
+    pub fn cubemap_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .cubemap_index
             .expect("image has no bindless cubemap index — was it created with Cubemap kind and SAMPLED usage?")
+            .raw()
     }
 
-    /// Returns the bindless 2D array index (binding 4) for use in push constants.
+    /// Returns the bindless 2D array index as a `u32` ready for push constants.
     ///
-    /// The image must have been created with `ImageKind::Image2DArray` and `SAMPLED` usage.
-    pub fn array_index(&self, handle: Image) -> BindlessIndex<Array2D> {
+    /// The image must have been created with [`ImageKind::Image2DArray`](crate::resource::ImageKind::Image2DArray)
+    /// and `vk::ImageUsageFlags::SAMPLED`.
+    pub fn array_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .array_index
             .expect("image has no bindless array index — was it created with Image2DArray kind and SAMPLED usage?")
+            .raw()
+    }
+
+    /// Returns the bindless sampler index as a `u32` ready for push constants.
+    pub fn sampler_index(&self, sampler: Sampler) -> u32 {
+        sampler.raw()
     }
 }

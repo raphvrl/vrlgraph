@@ -13,28 +13,28 @@ glam = ["dep:glam"]
 [dependencies]
 ash = "0.38.0"
 ash-window = "0.13.0"
-raw-window-handle = "0.6"
+raw-window-handle = "0.6.2"
 
 gpu-allocator = { version = "0.28.0", default-features = false, features = [
   "std",
   "vulkan",
 ] }
 
-bytemuck = { version = "1", features = ["derive"] }
-petgraph = { version = "0.6", default-features = false }
+bytemuck = { version = "1.25.0", features = ["derive"] }
+petgraph = { version = "0.8.3", default-features = false }
 slotmap = "1.1.1"
 smallvec = { version = "1.15.1", features = ["union"] }
 
 thiserror = "2.0.18"
 tracing = "0.1.44"
-notify = "6"
+notify = "8.2.0"
 
-image = { version = "0.25", default-features = false, features = [
+image = { version = "0.25.10", default-features = false, features = [
   "png",
   "jpeg",
 ] }
 
-glam = { version = "0.29", optional = true }
+glam = { version = "0.32.1", optional = true }
 vrlgraph-derive = { path = "derive" }
 
 [dev-dependencies]

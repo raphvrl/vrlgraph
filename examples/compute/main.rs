@@ -94,7 +94,7 @@ impl State {
         let compute_pipe = self.compute_pipeline;
         let graphics_pipe = self.graphics_pipeline;
         let storage_image = self.storage_image;
-        let sampler_idx = self.sampler.index;
+        let sampler = self.sampler;
 
         self.graph
             .compute_pass("fill")
@@ -105,7 +105,7 @@ impl State {
                 let params = FillParams {
                     width,
                     height,
-                    storage_idx: res.storage_index(storage_image).0,
+                    storage_idx: res.storage_index(storage_image),
                     _pad: 0,
                 };
 
@@ -124,8 +124,8 @@ impl State {
                 cmd.set_viewport_scissor(frame.extent);
 
                 let params = BlitParams {
-                    sampled_idx: res.sampled_index(storage_image).0,
-                    sampler_idx,
+                    sampled_idx: res.sampled_index(storage_image),
+                    sampler_idx: res.sampler_index(sampler),
                 };
 
                 cmd.push_constants(&params);

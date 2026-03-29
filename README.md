@@ -710,9 +710,3 @@ All fallible operations return `Result<T, GraphError>`. The main variants you sh
 | `GraphError::PassCycle(name)` | A cycle was detected in the pass dependency graph |
 
 All other variants wrap lower-level errors (`DeviceError`, `ResourceError`, Vulkan result codes) and are generally fatal.
-
----
-
-## License
-
-MIT

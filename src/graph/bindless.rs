@@ -25,29 +25,48 @@ pub struct Array2D;
 
 /// Type-safe index into the global bindless descriptor table.
 ///
-/// The phantom type `K` encodes which binding the index belongs to, preventing
-/// accidental misuse (e.g. passing a cubemap index where a sampled index is
-/// expected).
-///
-/// Pass `.0` inside push constants so shaders can access resources by index
-/// (e.g. `textures[index]`).
+/// The phantom type `K` encodes which binding the index belongs to. Returned
+/// by `FrameResources::sampled_index` and friends as an internal representation;
+/// use those methods directly to get the `u32` for push constants.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct BindlessIndex<K>(pub u32, PhantomData<K>);
+pub struct BindlessIndex<K>(u32, PhantomData<K>);
 
 impl<K> BindlessIndex<K> {
     fn new(index: u32) -> Self {
         Self(index, PhantomData)
     }
+
+    pub fn raw(self) -> u32 {
+        self.0
+    }
+}
+
+impl<K> From<BindlessIndex<K>> for u32 {
+    fn from(idx: BindlessIndex<K>) -> u32 {
+        idx.0
+    }
 }
 
 /// A sampler registered in the global bindless table.
 ///
-/// Bundles the `SamplerHandle` (for lifetime management / `destroy_sampler`)
-/// with the bindless `index` to pass to shaders via push constants.
+/// Returned by [`Graph::create_sampler`](crate::graph::Graph::create_sampler). Pass it to
+/// [`FrameResources::sampler_index`](crate::graph::FrameResources::sampler_index) inside a
+/// pass closure to get the `u32` index for push constants. Pass it to
+/// [`Graph::destroy_sampler`](crate::graph::Graph::destroy_sampler) to release it.
 #[derive(Clone, Copy, Debug)]
 pub struct Sampler {
-    pub handle: crate::resource::SamplerHandle,
-    pub index: u32,
+    pub(crate) handle: crate::resource::SamplerHandle,
+    index: u32,
+}
+
+impl Sampler {
+    pub(crate) fn new(handle: crate::resource::SamplerHandle, index: u32) -> Self {
+        Self { handle, index }
+    }
+
+    pub fn raw(&self) -> u32 {
+        self.index
+    }
 }
 
 /// A single, global descriptor set holding all sampled images, storage images,
@@ -247,12 +266,12 @@ impl BindlessDescriptorTable {
         view: vk::ImageView,
         image_layout: vk::ImageLayout,
     ) {
-        self.write_sampled(index.0, view, image_layout);
+        self.write_sampled(index.raw(), view, image_layout);
     }
 
     /// Updates an existing storage image slot (e.g. after a resize).
     pub fn update_storage_image(&self, index: BindlessIndex<Storage>, view: vk::ImageView) {
-        self.write_storage(index.0, view);
+        self.write_storage(index.raw(), view);
     }
 
     /// Writes a sampler into the table and returns its index.
@@ -311,7 +330,7 @@ impl BindlessDescriptorTable {
         view: vk::ImageView,
         image_layout: vk::ImageLayout,
     ) {
-        self.write_cubemap(index.0, view, image_layout);
+        self.write_cubemap(index.raw(), view, image_layout);
     }
 
     /// Updates an existing 2D array slot (e.g. after a resize).
@@ -321,27 +340,27 @@ impl BindlessDescriptorTable {
         view: vk::ImageView,
         image_layout: vk::ImageLayout,
     ) {
-        self.write_array(index.0, view, image_layout);
+        self.write_array(index.raw(), view, image_layout);
     }
 
     /// Releases a sampled image slot for reuse.
     pub fn free_sampled(&mut self, index: BindlessIndex<Sampled>) {
-        self.sampled_free.push(index.0);
+        self.sampled_free.push(index.raw());
     }
 
     /// Releases a storage image slot for reuse.
     pub fn free_storage(&mut self, index: BindlessIndex<Storage>) {
-        self.storage_free.push(index.0);
+        self.storage_free.push(index.raw());
     }
 
     /// Releases a cubemap slot for reuse.
     pub fn free_cubemap(&mut self, index: BindlessIndex<Cubemap>) {
-        self.cubemap_free.push(index.0);
+        self.cubemap_free.push(index.raw());
     }
 
     /// Releases a 2D array slot for reuse.
     pub fn free_array(&mut self, index: BindlessIndex<Array2D>) {
-        self.array_free.push(index.0);
+        self.array_free.push(index.raw());
     }
 
     pub fn set(&self) -> vk::DescriptorSet {

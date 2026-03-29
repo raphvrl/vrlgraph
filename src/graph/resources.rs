@@ -311,6 +311,51 @@ impl Graph {
         self.upload_buffer_labeled(bytes, usage, "uploaded_buffer")
     }
 
+    fn one_shot_submit(&mut self, f: impl FnOnce(&Cmd)) -> Result<(), GraphError> {
+        let device = self.device.ash_device().clone();
+        let pool = CommandPool::new(&device, self.device.graphics_family())?;
+        let raw_cb = pool.reset_and_begin()?;
+        let cmd = Cmd::new(
+            raw_cb,
+            device.clone(),
+            self.device.ext_dynamic_state3().clone(),
+            None,
+        );
+        f(&cmd);
+        let buffer = cmd.finish()?;
+        let cmd_info = vk::CommandBufferSubmitInfo::default().command_buffer(buffer);
+        let submit =
+            vk::SubmitInfo2::default().command_buffer_infos(std::slice::from_ref(&cmd_info));
+        unsafe {
+            device.queue_submit2(self.device.queue().raw(), &[submit], vk::Fence::null())?;
+            device.queue_wait_idle(self.device.queue().raw())?;
+        }
+        Ok(())
+    }
+
+    fn create_staging(&mut self, data: &[u8], label: &str) -> Result<crate::resource::BufferHandle, GraphError> {
+        let device = self.device.ash_device().clone();
+        let handle = self.resources.create_buffer(
+            &device,
+            self.device.allocator_mut(),
+            &BufferDesc {
+                size: data.len() as vk::DeviceSize,
+                usage: vk::BufferUsageFlags::TRANSFER_SRC,
+                location: MemoryLocation::CpuToGpu,
+                label: label.to_string(),
+            },
+        )?;
+        let buf = self.resources.get_buffer(handle).expect("buffer just created");
+        let ptr = buf.mapped_ptr().expect("staging buffer not host visible");
+        unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len()) };
+        Ok(handle)
+    }
+
+    fn destroy_staging(&mut self, handle: crate::resource::BufferHandle) {
+        let device = self.device.ash_device().clone();
+        self.resources.destroy_buffer(&device, self.device.allocator_mut(), handle);
+    }
+
     pub(crate) fn upload_buffer_labeled(
         &mut self,
         bytes: &[u8],
@@ -320,25 +365,7 @@ impl Graph {
         let size = bytes.len() as vk::DeviceSize;
         let device = self.device.ash_device().clone();
 
-        let staging = self.resources.create_buffer(
-            &device,
-            self.device.allocator_mut(),
-            &BufferDesc {
-                size,
-                usage: vk::BufferUsageFlags::TRANSFER_SRC,
-                location: MemoryLocation::CpuToGpu,
-                label: format!("{label}_staging"),
-            },
-        )?;
-
-        {
-            let buf = self
-                .resources
-                .get_buffer(staging)
-                .expect("buffer just created");
-            let ptr = buf.mapped_ptr().expect("staging buffer not host visible");
-            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
-        }
+        let staging = self.create_staging(bytes, &format!("{label}_staging"))?;
 
         let dst = self.resources.create_buffer(
             &device,
@@ -351,39 +378,10 @@ impl Graph {
             },
         )?;
 
-        let pool = CommandPool::new(&device, self.device.graphics_family())?;
-        let raw_cb = pool.reset_and_begin()?;
-        let cmd = Cmd::new(
-            raw_cb,
-            device.clone(),
-            self.device.ext_dynamic_state3().clone(),
-            None,
-        );
-
-        let src_raw = self
-            .resources
-            .get_buffer(staging)
-            .expect("buffer just created")
-            .raw;
-        let dst_raw = self
-            .resources
-            .get_buffer(dst)
-            .expect("buffer just created")
-            .raw;
-        cmd.copy_buffer_to_buffer(src_raw, dst_raw, size);
-
-        let buffer = cmd.finish()?;
-        let cmd_info = vk::CommandBufferSubmitInfo::default().command_buffer(buffer);
-        let submit =
-            vk::SubmitInfo2::default().command_buffer_infos(std::slice::from_ref(&cmd_info));
-
-        unsafe {
-            device.queue_submit2(self.device.queue().raw(), &[submit], vk::Fence::null())?;
-            device.queue_wait_idle(self.device.queue().raw())?;
-        }
-
-        self.resources
-            .destroy_buffer(&device, self.device.allocator_mut(), staging);
+        let src_raw = self.resources.get_buffer(staging).expect("buffer just created").raw;
+        let dst_raw = self.resources.get_buffer(dst).expect("buffer just created").raw;
+        self.one_shot_submit(|cmd| cmd.copy_buffer_to_buffer(src_raw, dst_raw, size))?;
+        self.destroy_staging(staging);
 
         Ok(Buffer(dst))
     }
@@ -397,6 +395,31 @@ impl Graph {
 
     // ── Convenience buffer methods ───────────────────────────────────
 
+    fn host_buffer(
+        &mut self,
+        label: &str,
+        size: vk::DeviceSize,
+        usage: vk::BufferUsageFlags,
+    ) -> Result<Buffer, GraphError> {
+        Ok(self.create_buffer(&BufferDesc {
+            size,
+            usage: usage | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            location: MemoryLocation::CpuToGpu,
+            label: label.to_string(),
+        })?)
+    }
+
+    fn host_buffer_with_data<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+        usage: vk::BufferUsageFlags,
+    ) -> Result<Buffer, GraphError> {
+        let buf = self.host_buffer(label, std::mem::size_of_val(data) as vk::DeviceSize, usage)?;
+        self.write_buffer(buf, data);
+        Ok(buf)
+    }
+
     /// Allocates a `STORAGE_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
     ///
     /// Includes `SHADER_DEVICE_ADDRESS` automatically. Retrieve the GPU pointer
@@ -406,15 +429,7 @@ impl Graph {
         label: &str,
         data: &[T],
     ) -> Result<Buffer, GraphError> {
-        let buf = self.create_buffer(&BufferDesc {
-            size: std::mem::size_of_val(data) as vk::DeviceSize,
-            usage: vk::BufferUsageFlags::STORAGE_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            location: MemoryLocation::CpuToGpu,
-            label: label.to_string(),
-        })?;
-        self.write_buffer(buf, data);
-        Ok(buf)
+        self.host_buffer_with_data(label, data, vk::BufferUsageFlags::STORAGE_BUFFER)
     }
 
     /// Allocates an uninitialised `STORAGE_BUFFER` of `size` bytes in `CpuToGpu` memory.
@@ -425,13 +440,7 @@ impl Graph {
         label: &str,
         size: vk::DeviceSize,
     ) -> Result<Buffer, GraphError> {
-        Ok(self.create_buffer(&BufferDesc {
-            size,
-            usage: vk::BufferUsageFlags::STORAGE_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            location: MemoryLocation::CpuToGpu,
-            label: label.to_string(),
-        })?)
+        self.host_buffer(label, size, vk::BufferUsageFlags::STORAGE_BUFFER)
     }
 
     /// Allocates a `UNIFORM_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
@@ -443,15 +452,7 @@ impl Graph {
         label: &str,
         data: &[T],
     ) -> Result<Buffer, GraphError> {
-        let buf = self.create_buffer(&BufferDesc {
-            size: std::mem::size_of_val(data) as vk::DeviceSize,
-            usage: vk::BufferUsageFlags::UNIFORM_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            location: MemoryLocation::CpuToGpu,
-            label: label.to_string(),
-        })?;
-        self.write_buffer(buf, data);
-        Ok(buf)
+        self.host_buffer_with_data(label, data, vk::BufferUsageFlags::UNIFORM_BUFFER)
     }
 
     /// Allocates an uninitialised `UNIFORM_BUFFER` of `size` bytes in `CpuToGpu` memory.
@@ -460,13 +461,7 @@ impl Graph {
         label: &str,
         size: vk::DeviceSize,
     ) -> Result<Buffer, GraphError> {
-        Ok(self.create_buffer(&BufferDesc {
-            size,
-            usage: vk::BufferUsageFlags::UNIFORM_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            location: MemoryLocation::CpuToGpu,
-            label: label.to_string(),
-        })?)
+        self.host_buffer(label, size, vk::BufferUsageFlags::UNIFORM_BUFFER)
     }
 
     /// Allocates a `VERTEX_BUFFER` pre-filled with `data` in `GpuOnly` memory.
@@ -510,13 +505,7 @@ impl Graph {
         label: &str,
         size: vk::DeviceSize,
     ) -> Result<Buffer, GraphError> {
-        Ok(self.create_buffer(&BufferDesc {
-            size,
-            usage: vk::BufferUsageFlags::VERTEX_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            location: MemoryLocation::CpuToGpu,
-            label: label.to_string(),
-        })?)
+        self.host_buffer(label, size, vk::BufferUsageFlags::VERTEX_BUFFER)
     }
 
     /// Allocates an uninitialised `INDEX_BUFFER` of `size` bytes in `CpuToGpu` memory.
@@ -527,13 +516,7 @@ impl Graph {
         label: &str,
         size: vk::DeviceSize,
     ) -> Result<Buffer, GraphError> {
-        Ok(self.create_buffer(&BufferDesc {
-            size,
-            usage: vk::BufferUsageFlags::INDEX_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            location: MemoryLocation::CpuToGpu,
-            label: label.to_string(),
-        })?)
+        self.host_buffer(label, size, vk::BufferUsageFlags::INDEX_BUFFER)
     }
 
     /// Allocates a `VERTEX_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
@@ -546,15 +529,7 @@ impl Graph {
         label: &str,
         data: &[T],
     ) -> Result<Buffer, GraphError> {
-        let buf = self.create_buffer(&BufferDesc {
-            size: std::mem::size_of_val(data) as vk::DeviceSize,
-            usage: vk::BufferUsageFlags::VERTEX_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            location: MemoryLocation::CpuToGpu,
-            label: label.to_string(),
-        })?;
-        self.write_buffer(buf, data);
-        Ok(buf)
+        self.host_buffer_with_data(label, data, vk::BufferUsageFlags::VERTEX_BUFFER)
     }
 
     /// Allocates an `INDEX_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
@@ -566,15 +541,7 @@ impl Graph {
         label: &str,
         data: &[T],
     ) -> Result<Buffer, GraphError> {
-        let buf = self.create_buffer(&BufferDesc {
-            size: std::mem::size_of_val(data) as vk::DeviceSize,
-            usage: vk::BufferUsageFlags::INDEX_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            location: MemoryLocation::CpuToGpu,
-            label: label.to_string(),
-        })?;
-        self.write_buffer(buf, data);
-        Ok(buf)
+        self.host_buffer_with_data(label, data, vk::BufferUsageFlags::INDEX_BUFFER)
     }
 
     pub fn create_sampler(&mut self, info: &vk::SamplerCreateInfo) -> Result<Sampler, GraphError> {
@@ -586,7 +553,7 @@ impl Graph {
             .get_sampler(handle)
             .expect("sampler just created");
         let index = self.bindless.write_sampler(raw);
-        Ok(Sampler { handle, index })
+        Ok(Sampler::new(handle, index))
     }
 
     pub fn destroy_sampler(&mut self, sampler: Sampler) {
@@ -601,100 +568,56 @@ impl Graph {
         extent: vk::Extent3D,
         mip_levels: u32,
     ) -> Result<(), GraphError> {
-        let device = self.device.ash_device().clone();
+        let staging = self.create_staging(pixels, "staging_upload")?;
 
-        let staging = self.resources.create_buffer(
-            &device,
-            self.device.allocator_mut(),
-            &BufferDesc {
-                size: pixels.len() as u64,
-                usage: vk::BufferUsageFlags::TRANSFER_SRC,
-                location: MemoryLocation::CpuToGpu,
-                label: "staging_upload".to_string(),
-            },
-        )?;
+        let vk_img = self.resources.get_image(dst).expect("image just created").raw;
+        let stg_buf = self.resources.get_buffer(staging).expect("buffer just created").raw;
 
-        {
-            let buf = self
-                .resources
-                .get_buffer(staging)
-                .expect("buffer just created");
-            let ptr = buf.mapped_ptr().expect("staging buffer not host visible");
-            unsafe { std::ptr::copy_nonoverlapping(pixels.as_ptr(), ptr, pixels.len()) };
-        }
-
-        let pool = CommandPool::new(&device, self.device.graphics_family())?;
-        let raw = pool.reset_and_begin()?;
-        let cmd = Cmd::new(
-            raw,
-            device.clone(),
-            self.device.ext_dynamic_state3().clone(),
-            None,
-        );
-
-        let dst_img = self.resources.get_image(dst).expect("image just created");
-        let vk_img = dst_img.raw;
-        let stg_buf = self
-            .resources
-            .get_buffer(staging)
-            .expect("buffer just created")
-            .raw;
-
-        cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
-            .src_stage_mask(vk::PipelineStageFlags2::NONE)
-            .src_access_mask(vk::AccessFlags2::NONE)
-            .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
-            .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
-            .old_layout(vk::ImageLayout::UNDEFINED)
-            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(vk_img)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: vk::REMAINING_MIP_LEVELS,
-                base_array_layer: 0,
-                layer_count: 1,
-            })]);
-
-        cmd.copy_buffer_to_image(stg_buf, vk_img, extent, 0);
-
-        if mip_levels > 1 {
-            cmd.generate_mipmaps(vk_img, extent, mip_levels);
-        } else {
+        self.one_shot_submit(|cmd| {
             cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
-                .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
-                .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
-                .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
-                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
-                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_stage_mask(vk::PipelineStageFlags2::NONE)
+                .src_access_mask(vk::AccessFlags2::NONE)
+                .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(vk_img)
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     base_mip_level: 0,
-                    level_count: 1,
+                    level_count: vk::REMAINING_MIP_LEVELS,
                     base_array_layer: 0,
                     layer_count: 1,
                 })]);
-        }
 
-        let buffer = cmd.finish()?;
-        let cmd_info = vk::CommandBufferSubmitInfo::default().command_buffer(buffer);
-        let submit =
-            vk::SubmitInfo2::default().command_buffer_infos(std::slice::from_ref(&cmd_info));
+            cmd.copy_buffer_to_image(stg_buf, vk_img, extent, 0);
 
-        unsafe {
-            device.queue_submit2(self.device.queue().raw(), &[submit], vk::Fence::null())?;
-            device.queue_wait_idle(self.device.queue().raw())?;
-        }
+            if mip_levels > 1 {
+                cmd.generate_mipmaps(vk_img, extent, mip_levels);
+            } else {
+                cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
+                    .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                    .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                    .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                    .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+                    .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .image(vk_img)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })]);
+            }
+        })?;
 
-        self.resources
-            .destroy_buffer(&device, self.device.allocator_mut(), staging);
-
+        self.destroy_staging(staging);
         Ok(())
     }
 }
