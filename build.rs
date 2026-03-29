@@ -50,7 +50,10 @@ fn main() {
         return;
     }
 
-    let glslc = which_glslc();
+    let Some(glslc) = which_glslc() else {
+        println!("cargo:warning=glslc not found, skipping shader compilation");
+        return;
+    };
 
     std::fs::create_dir_all(&shaders_out).expect("failed to create shader output directory");
 
@@ -111,23 +114,20 @@ fn main() {
     }
 }
 
-fn which_glslc() -> PathBuf {
+fn which_glslc() -> Option<PathBuf> {
     let candidates = ["glslc", "glslc.exe"];
     for name in candidates {
         if Command::new(name).arg("--version").output().is_ok() {
-            return PathBuf::from(name);
+            return Some(PathBuf::from(name));
         }
     }
 
     if let Ok(sdk) = std::env::var("VULKAN_SDK") {
         let path = PathBuf::from(sdk).join("Bin").join("glslc.exe");
         if path.exists() {
-            return path;
+            return Some(path);
         }
     }
 
-    panic!(
-        "glslc not found — install the Vulkan SDK and ensure it is in PATH, \
-         or set the VULKAN_SDK environment variable"
-    );
+    None
 }
