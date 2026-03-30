@@ -1,8 +1,9 @@
+use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 use ash::vk;
 
-use crate::resource::{GpuPipeline, Pipeline};
+use crate::resource::{GpuPipeline, Pipeline, ShaderModule};
 use crate::vertex::VertexInput;
 
 #[cfg(debug_assertions)]
@@ -12,66 +13,48 @@ use super::{Graph, GraphError};
 /// Builder for a graphics pipeline.
 ///
 /// Obtained from [`Graph::graphics_pipeline`]. At minimum you must provide a
-/// vertex and a fragment shader. All rasterizer state is dynamic — you set it
-/// per draw call via [`Cmd`](super::command::Cmd).
+/// vertex and a fragment shader module. All rasterizer state is dynamic — you
+/// set it per draw call via [`Cmd`](super::command::Cmd).
 ///
 /// Color formats default to the swapchain format. Override with
 /// [`color_formats`](PipelineBuilder::color_formats) when rendering to
 /// off-screen targets.
 pub struct PipelineBuilder<'g> {
     graph: &'g mut Graph,
-    vertex_spv: Option<Vec<u32>>,
-    fragment_spv: Option<Vec<u32>>,
+    label: String,
+    vertex: Option<ShaderModule>,
+    fragment: Option<ShaderModule>,
     color_formats: Vec<vk::Format>,
     depth_format: Option<vk::Format>,
     vertex_bindings: Vec<vk::VertexInputBindingDescription>,
     vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
-    #[cfg(debug_assertions)]
-    vertex_path: Option<PathBuf>,
-    #[cfg(debug_assertions)]
-    fragment_path: Option<PathBuf>,
 }
 
 impl<'g> PipelineBuilder<'g> {
-    pub(super) fn new(graph: &'g mut Graph) -> Self {
+    pub(super) fn new(graph: &'g mut Graph, label: impl Into<String>) -> Self {
         let swapchain_format = graph.device().swapchain().format();
         Self {
             graph,
-            vertex_spv: None,
-            fragment_spv: None,
+            label: label.into(),
+            vertex: None,
+            fragment: None,
             color_formats: vec![swapchain_format],
             depth_format: None,
             vertex_bindings: Vec::new(),
             vertex_attributes: Vec::new(),
-            #[cfg(debug_assertions)]
-            vertex_path: None,
-            #[cfg(debug_assertions)]
-            fragment_path: None,
         }
     }
 
-    /// Loads the vertex shader from a SPIR-V file. Required.
-    ///
-    /// Relative paths are resolved from the directory of the current executable.
-    pub fn vertex_shader(mut self, path: impl AsRef<Path>) -> Result<Self, GraphError> {
-        let resolved = resolve_shader_path(path.as_ref());
-        #[cfg(debug_assertions)]
-        {
-            self.vertex_path = Some(resolved.clone());
-        }
-        self.vertex_spv = Some(load_spv(&resolved)?);
-        Ok(self)
+    /// Sets the vertex shader module. Required.
+    pub fn vertex_shader(mut self, module: ShaderModule) -> Self {
+        self.vertex = Some(module);
+        self
     }
 
-    /// Loads the fragment shader from a SPIR-V file. Required.
-    pub fn fragment_shader(mut self, path: impl AsRef<Path>) -> Result<Self, GraphError> {
-        let resolved = resolve_shader_path(path.as_ref());
-        #[cfg(debug_assertions)]
-        {
-            self.fragment_path = Some(resolved.clone());
-        }
-        self.fragment_spv = Some(load_spv(&resolved)?);
-        Ok(self)
+    /// Sets the fragment shader module. Required.
+    pub fn fragment_shader(mut self, module: ShaderModule) -> Self {
+        self.fragment = Some(module);
+        self
     }
 
     /// Overrides the color attachment formats. By default the swapchain format
@@ -116,36 +99,49 @@ impl<'g> PipelineBuilder<'g> {
     /// Compiles the pipeline and registers it with the graph.
     /// Returns a [`Pipeline`] that can be passed to [`FrameResources::pipeline`](super::pass::FrameResources::pipeline).
     pub fn build(self) -> Result<Pipeline, GraphError> {
-        let vert_spv = self
-            .vertex_spv
+        let vertex = self
+            .vertex
             .expect("PipelineBuilder: vertex_shader() is required");
-        let frag_spv = self
-            .fragment_spv
+        let fragment = self
+            .fragment
             .expect("PipelineBuilder: fragment_shader() is required");
 
-        let device = self.graph.ash_device().clone();
+        let vert_module = self
+            .graph
+            .resources
+            .get_shader_module(vertex.0)
+            .expect("PipelineBuilder: vertex ShaderModule not found in pool")
+            .module;
+        let vert_entry = self
+            .graph
+            .resources
+            .get_shader_module(vertex.0)
+            .expect("PipelineBuilder: vertex ShaderModule not found in pool")
+            .entry
+            .clone();
+        let frag_module = self
+            .graph
+            .resources
+            .get_shader_module(fragment.0)
+            .expect("PipelineBuilder: fragment ShaderModule not found in pool")
+            .module;
+        let frag_entry = self
+            .graph
+            .resources
+            .get_shader_module(fragment.0)
+            .expect("PipelineBuilder: fragment ShaderModule not found in pool")
+            .entry
+            .clone();
 
-        let vert_module = unsafe {
-            device
-                .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&vert_spv), None)
-        }?;
-
-        let frag_module = unsafe {
-            device
-                .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&frag_spv), None)
-        }
-        .inspect_err(|_| unsafe { device.destroy_shader_module(vert_module, None) })?;
-
-        let entry = c"main";
         let stages = [
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::VERTEX)
                 .module(vert_module)
-                .name(entry),
+                .name(vert_entry.as_c_str()),
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::FRAGMENT)
                 .module(frag_module)
-                .name(entry),
+                .name(frag_entry.as_c_str()),
         ];
 
         let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
@@ -215,28 +211,32 @@ impl<'g> PipelineBuilder<'g> {
             .push_next(&mut rendering_info);
 
         let raw = unsafe {
-            device
+            self.graph
+                .ash_device()
                 .create_graphics_pipelines(self.graph.pipeline_cache(), &[pipeline_info], None)
                 .map_err(|(_, e)| e)?
         };
-
-        unsafe {
-            device.destroy_shader_module(vert_module, None);
-            device.destroy_shader_module(frag_module, None);
-        }
 
         let handle = self.graph.insert_pipeline(GpuPipeline {
             pipeline: raw[0],
             layout,
         });
 
+        if let Some(du) = self.graph.device().debug_utils() {
+            let name = CString::new(self.label.as_str()).unwrap();
+            let info = vk::DebugUtilsObjectNameInfoEXT::default()
+                .object_handle(raw[0])
+                .object_name(&name);
+            let _ = unsafe { du.set_debug_utils_object_name(&info) };
+        }
+
         #[cfg(debug_assertions)]
         self.graph.register_pipeline_desc(
             handle,
             PipelineDesc {
                 kind: PipelineKind::Graphics {
-                    vertex_path: self.vertex_path.expect("set together with spv"),
-                    fragment_path: self.fragment_path.expect("set together with spv"),
+                    vertex: vertex.0,
+                    fragment: fragment.0,
                     color_formats: self.color_formats,
                     depth_format: self.depth_format,
                     vertex_bindings: self.vertex_bindings,
@@ -251,55 +251,52 @@ impl<'g> PipelineBuilder<'g> {
 
 /// Builder for a compute pipeline.
 ///
-/// Obtained from [`Graph::compute_pipeline`]. Provide a compute shader and,
-/// optionally, push constants and descriptor set layouts.
+/// Obtained from [`Graph::compute_pipeline`]. Provide a compute shader module.
 pub struct ComputePipelineBuilder<'g> {
     graph: &'g mut Graph,
-    compute_spv: Option<Vec<u32>>,
-    #[cfg(debug_assertions)]
-    compute_path: Option<PathBuf>,
+    label: String,
+    shader: Option<ShaderModule>,
 }
 
 impl<'g> ComputePipelineBuilder<'g> {
-    pub(super) fn new(graph: &'g mut Graph) -> Self {
+    pub(super) fn new(graph: &'g mut Graph, label: impl Into<String>) -> Self {
         Self {
             graph,
-            compute_spv: None,
-            #[cfg(debug_assertions)]
-            compute_path: None,
+            label: label.into(),
+            shader: None,
         }
     }
 
-    /// Loads the compute shader from a SPIR-V file. Required.
-    ///
-    /// Relative paths are resolved from the directory of the current executable.
-    pub fn shader(mut self, path: impl AsRef<Path>) -> Result<Self, GraphError> {
-        let resolved = resolve_shader_path(path.as_ref());
-        #[cfg(debug_assertions)]
-        {
-            self.compute_path = Some(resolved.clone());
-        }
-        self.compute_spv = Some(load_spv(&resolved)?);
-        Ok(self)
+    /// Sets the compute shader module. Required.
+    pub fn shader(mut self, module: ShaderModule) -> Self {
+        self.shader = Some(module);
+        self
     }
 
     /// Compiles the pipeline and registers it with the graph.
     pub fn build(self) -> Result<Pipeline, GraphError> {
-        let spv = self
-            .compute_spv
+        let shader = self
+            .shader
             .expect("ComputePipelineBuilder: shader() is required");
 
-        let device = self.graph.ash_device().clone();
+        let compute_module = self
+            .graph
+            .resources
+            .get_shader_module(shader.0)
+            .expect("ComputePipelineBuilder: ShaderModule not found in pool")
+            .module;
+        let compute_entry = self
+            .graph
+            .resources
+            .get_shader_module(shader.0)
+            .expect("ComputePipelineBuilder: ShaderModule not found in pool")
+            .entry
+            .clone();
 
-        let module = unsafe {
-            device.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&spv), None)
-        }?;
-
-        let entry = c"main";
         let stage = vk::PipelineShaderStageCreateInfo::default()
             .stage(vk::ShaderStageFlags::COMPUTE)
-            .module(module)
-            .name(entry);
+            .module(compute_module)
+            .name(compute_entry.as_c_str());
 
         let layout = self.graph.bindless.pipeline_layout();
 
@@ -308,25 +305,30 @@ impl<'g> ComputePipelineBuilder<'g> {
             .layout(layout);
 
         let raw = unsafe {
-            device
+            self.graph
+                .ash_device()
                 .create_compute_pipelines(self.graph.pipeline_cache(), &[pipeline_info], None)
                 .map_err(|(_, e)| e)?
         };
-
-        unsafe { device.destroy_shader_module(module, None) };
 
         let handle = self.graph.insert_pipeline(GpuPipeline {
             pipeline: raw[0],
             layout,
         });
 
+        if let Some(du) = self.graph.device().debug_utils() {
+            let name = CString::new(self.label.as_str()).unwrap();
+            let info = vk::DebugUtilsObjectNameInfoEXT::default()
+                .object_handle(raw[0])
+                .object_name(&name);
+            let _ = unsafe { du.set_debug_utils_object_name(&info) };
+        }
+
         #[cfg(debug_assertions)]
         self.graph.register_pipeline_desc(
             handle,
             PipelineDesc {
-                kind: PipelineKind::Compute {
-                    path: self.compute_path.expect("set together with spv"),
-                },
+                kind: PipelineKind::Compute { shader: shader.0 },
             },
         );
 
@@ -334,7 +336,7 @@ impl<'g> ComputePipelineBuilder<'g> {
     }
 }
 
-fn resolve_shader_path(path: &Path) -> PathBuf {
+pub(super) fn resolve_shader_path(path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_owned();
     }
@@ -344,12 +346,12 @@ fn resolve_shader_path(path: &Path) -> PathBuf {
         .unwrap_or_else(|| path.to_owned())
 }
 
-pub(super) fn load_spv(path: &Path) -> Result<Vec<u32>, GraphError> {
+pub(super) fn load_spv(path: &Path) -> Result<Vec<u32>, super::GraphError> {
     let bytes = std::fs::read(path)
-        .map_err(|e| GraphError::ShaderLoad(format!("{}: {e}", path.display())))?;
+        .map_err(|e| super::GraphError::ShaderLoad(format!("{}: {e}", path.display())))?;
 
     if bytes.len() % 4 != 0 {
-        return Err(GraphError::ShaderLoad(format!(
+        return Err(super::GraphError::ShaderLoad(format!(
             "{}: taille SPIR-V non alignée sur 4 octets",
             path.display()
         )));

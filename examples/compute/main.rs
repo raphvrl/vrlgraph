@@ -5,6 +5,7 @@ use winit::window::{Window, WindowId};
 
 use bytemuck::{Pod, Zeroable};
 
+use vrlgraph::ash::vk;
 use vrlgraph::prelude::*;
 
 #[repr(C)]
@@ -43,35 +44,30 @@ impl State {
             .present_mode(PresentMode::Fifo)
             .build()?;
 
-        let storage_image = graph.create_resizable(|ext| ImageDesc {
-            extent: vk::Extent3D {
-                width: ext.width,
-                height: ext.height,
-                depth: 1,
-            },
-            format: vk::Format::R8G8B8A8_UNORM,
-            usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED,
-            label: "triangle_storage".to_string(),
-            ..Default::default()
-        })?;
-
-        let sampler = graph.create_sampler(
-            &vk::SamplerCreateInfo::default()
-                .mag_filter(vk::Filter::NEAREST)
-                .min_filter(vk::Filter::NEAREST)
-                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
-        )?;
-
-        let compute_pipeline = graph
-            .compute_pipeline()
-            .shader("shaders/fill.comp.spv")?
+        let storage_image = graph
+            .persistent_image()
+            .format(vk::Format::R8G8B8A8_UNORM)
+            .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED)
+            .label("triangle_storage")
+            .resizable()
             .build()?;
 
+        let sampler = graph
+            .create_sampler()
+            .filter(Filter::NEAREST)
+            .address_mode_u(AddressMode::CLAMP_TO_EDGE)
+            .address_mode_v(AddressMode::CLAMP_TO_EDGE)
+            .build()?;
+
+        let cs = graph.shader_module("shaders/fill.comp.spv", "main")?;
+        let compute_pipeline = graph.compute_pipeline("fill").shader(cs).build()?;
+
+        let vs = graph.shader_module("shaders/fullscreen.vert.spv", "main")?;
+        let fs = graph.shader_module("shaders/blit.frag.spv", "main")?;
         let graphics_pipeline = graph
-            .graphics_pipeline()
-            .vertex_shader("shaders/fullscreen.vert.spv")?
-            .fragment_shader("shaders/blit.frag.spv")?
+            .graphics_pipeline("blit")
+            .vertex_shader(vs)
+            .fragment_shader(fs)
             .build()?;
 
         Ok(Self {
@@ -132,7 +128,7 @@ impl State {
                 cmd.draw(3, 1);
             });
 
-        self.graph.end_frame()?;
+        self.graph.end_frame(frame)?;
         Ok(())
     }
 

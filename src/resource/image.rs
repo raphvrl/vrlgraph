@@ -3,6 +3,7 @@ use gpu_allocator::MemoryLocation;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 
 use super::ResourceError;
+use crate::types::SampleCount;
 
 /// Dimensionality and layer structure of an image.
 ///
@@ -67,8 +68,8 @@ pub struct ImageDesc {
     pub format: vk::Format,
     /// Number of mip levels. Use `1` unless you generate mipmaps manually.
     pub mip_levels: u32,
-    /// MSAA sample count. Use `TYPE_1` for non-multisampled images.
-    pub samples: vk::SampleCountFlags,
+    /// MSAA sample count. Use `SampleCount::S1` for non-multisampled images.
+    pub samples: SampleCount,
     /// Dimensionality and layer structure. Defaults to [`ImageKind::Image2D`].
     pub kind: ImageKind,
     /// Debug label shown in validation output and GPU debuggers.
@@ -88,7 +89,7 @@ impl Default for ImageDesc {
             },
             format: vk::Format::R8G8B8A8_UNORM,
             mip_levels: 1,
-            samples: vk::SampleCountFlags::TYPE_1,
+            samples: SampleCount::S1,
             kind: ImageKind::Image2D,
             label: String::new(),
             usage: vk::ImageUsageFlags::empty(),
@@ -127,7 +128,7 @@ impl GpuImage {
             .tiling(vk::ImageTiling::OPTIMAL)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .usage(usage)
-            .samples(desc.samples)
+            .samples(desc.samples.into())
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let raw = unsafe { device.create_image(&create_info, None)? };

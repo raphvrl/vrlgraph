@@ -5,7 +5,7 @@ use gpu_allocator::MemoryLocation;
 
 use super::bindless::{BindlessDescriptorTable, Sampler};
 use super::command::{Cmd, CommandPool};
-use super::image::{Image, ImageEntry};
+use super::image::{Image, ImageBuilder, ImageEntry, ImageOrigin};
 use super::{Graph, GraphError};
 use crate::resource::{
     Buffer, BufferDesc, GpuBuffer, ImageDesc, ImageHandle, ImageKind, ResourceError,
@@ -82,93 +82,19 @@ pub(super) fn update_bindless(
 }
 
 impl Graph {
-    pub fn create_transient(&mut self, desc: ImageDesc) -> Image {
-        assert!(
-            self.frame_active,
-            "create_transient() must be called after begin_frame()"
-        );
-        let h = Image(self.images.len() as u32);
-        self.images.push(ImageEntry::transient(desc));
-        h
+    pub fn transient_image(&mut self) -> ImageBuilder<'_> {
+        ImageBuilder::new(self, ImageOrigin::Transient)
     }
 
-    pub fn create_persistent(&mut self, desc: ImageDesc) -> Result<Image, GraphError> {
-        assert!(
-            !self.frame_active,
-            "create_persistent() must be called outside the frame loop"
-        );
-        let h = Image(self.images.len() as u32);
-        self.images.push(ImageEntry::persistent(desc));
-        self.persistent_count += 1;
-
-        let entry = self.images.last_mut().expect("just pushed");
-        if !entry.usage.is_empty() {
-            let device = self.device.ash_device().clone();
-            let usage = entry.usage | vk::ImageUsageFlags::TRANSFER_DST;
-            let handle = self.resources.create_image(
-                &device,
-                self.device.allocator_mut(),
-                &entry.desc,
-                usage,
-                entry.aspect,
-            )?;
-            let view = self
-                .resources
-                .get_image(handle)
-                .expect("image just created")
-                .view;
-            register_bindless(entry, &mut self.bindless, view);
-            entry.handle = Some(handle);
-        }
-
-        Ok(h)
-    }
-
-    pub fn create_resizable(
-        &mut self,
-        desc_fn: impl Fn(vk::Extent2D) -> ImageDesc + 'static,
-    ) -> Result<Image, GraphError> {
-        assert!(
-            !self.frame_active,
-            "create_resizable() must be called outside the frame loop"
-        );
-        let extent = self.device.swapchain().extent();
-        let desc = desc_fn(extent);
-        let idx = self.images.len();
-        let h = Image(idx as u32);
-        self.images.push(ImageEntry::persistent(desc));
-        self.persistent_count += 1;
-        self.resizable_images.push((idx, Box::new(desc_fn)));
-
-        let entry = &mut self.images[idx];
-        if !entry.usage.is_empty() {
-            let device = self.device.ash_device().clone();
-            let usage = entry.usage | vk::ImageUsageFlags::TRANSFER_DST;
-            let handle = self.resources.create_image(
-                &device,
-                self.device.allocator_mut(),
-                &entry.desc,
-                usage,
-                entry.aspect,
-            )?;
-            let view = self
-                .resources
-                .get_image(handle)
-                .expect("image just created")
-                .view;
-            let entry = &mut self.images[idx];
-            register_bindless(entry, &mut self.bindless, view);
-            entry.handle = Some(handle);
-        }
-
-        Ok(h)
+    pub fn persistent_image(&mut self) -> ImageBuilder<'_> {
+        ImageBuilder::new(self, ImageOrigin::Persistent)
     }
 
     pub fn load_texture(&mut self, path: impl AsRef<Path>) -> Result<Image, GraphError> {
         self.load_texture_with(path, ImageDesc::default())
     }
 
-    pub fn load_texture_with(
+    pub(crate) fn load_texture_with(
         &mut self,
         path: impl AsRef<Path>,
         mut desc: ImageDesc,
@@ -500,11 +426,7 @@ impl Graph {
     ///
     /// Like [`vertex_buffer`](Graph::vertex_buffer), data is uploaded via a
     /// synchronous staging transfer. `T` is typically `u16` or `u32`.
-    pub fn index_buffer<T: bytemuck::Pod>(
-        &mut self,
-        label: &str,
-        data: &[T],
-    ) -> Result<Buffer, GraphError> {
+    pub fn index_buffer(&mut self, label: &str, data: &[u32]) -> Result<Buffer, GraphError> {
         self.upload_buffer_labeled(
             bytemuck::cast_slice(data),
             vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -552,24 +474,16 @@ impl Graph {
     ///
     /// Like [`vertex_buffer_dynamic`](Graph::vertex_buffer_dynamic), directly writable
     /// from the CPU via [`Graph::write_buffer`]. `T` is typically `u16` or `u32`.
-    pub fn index_buffer_dynamic<T: bytemuck::Pod>(
+    pub fn index_buffer_dynamic(
         &mut self,
         label: &str,
-        data: &[T],
+        data: &[u32],
     ) -> Result<Buffer, GraphError> {
         self.host_buffer_with_data(label, data, vk::BufferUsageFlags::INDEX_BUFFER)
     }
 
-    pub fn create_sampler(&mut self, info: &vk::SamplerCreateInfo) -> Result<Sampler, GraphError> {
-        let handle = self
-            .resources
-            .create_sampler(self.device.ash_device(), info)?;
-        let raw = self
-            .resources
-            .get_sampler(handle)
-            .expect("sampler just created");
-        let index = self.bindless.write_sampler(raw);
-        Ok(Sampler::new(handle, index))
+    pub fn create_sampler(&mut self) -> super::sampler::SamplerBuilder<'_> {
+        super::sampler::SamplerBuilder::new(self)
     }
 
     pub fn destroy_sampler(&mut self, sampler: Sampler) {

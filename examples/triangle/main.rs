@@ -1,3 +1,4 @@
+use vrlgraph::graph::WithClearColor;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -22,10 +23,13 @@ impl State {
             .present_mode(PresentMode::Mailbox)
             .build()?;
 
+        let vs = graph.shader_module("shaders/triangle.vert.spv", "main")?;
+        let fs = graph.shader_module("shaders/triangle.frag.spv", "main")?;
+
         let pipeline = graph
-            .graphics_pipeline()
-            .vertex_shader("shaders/triangle.vert.spv")?
-            .fragment_shader("shaders/triangle.frag.spv")?
+            .graphics_pipeline("triangle")
+            .vertex_shader(vs)
+            .fragment_shader(fs)
             .build()?;
 
         Ok(Self {
@@ -43,16 +47,22 @@ impl State {
         let pipeline = self.pipeline;
         let extent = frame.extent;
 
+        let backbuffer = frame.backbuffer;
+
         self.graph
             .render_pass("triangle")
-            .write((frame.backbuffer, Access::ColorAttachment))
+            .write(WithClearColor(
+                backbuffer,
+                Access::ColorAttachment,
+                [0.1, 0.2, 0.3, 1.0],
+            ))
             .execute(move |cmd, res| {
                 cmd.bind_graphics_pipeline(res.pipeline(pipeline));
                 cmd.set_viewport_scissor(extent);
                 cmd.draw(3, 1);
             });
 
-        self.graph.end_frame()?;
+        self.graph.end_frame(frame)?;
         Ok(())
     }
 

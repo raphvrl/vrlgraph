@@ -19,6 +19,7 @@ mod query;
 #[cfg(debug_assertions)]
 mod reload;
 mod resources;
+mod sampler;
 mod sync;
 mod transient;
 
@@ -30,7 +31,9 @@ use thiserror::Error;
 
 use self::image::ImageEntry;
 use crate::device::{DeviceError, GpuDevice};
-use crate::resource::{BufferHandle, ImageDesc, PipelineHandle, ResourceError, ResourcePool};
+use crate::resource::{BufferHandle, ImageDesc, ResourceError, ResourcePool};
+#[cfg(debug_assertions)]
+use crate::resource::{PipelineHandle, ShaderModuleHandle};
 use barrier::BufferBarrierState;
 use bindless::BindlessDescriptorTable;
 use command::{CommandError, CommandPool};
@@ -49,11 +52,15 @@ pub use bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Sampler, Storage};
 pub use builder::{GpuPreference, GraphBuilder, PresentMode};
 pub use command::Cmd;
 pub use frame::PassSetup;
-pub use pass::{FrameResources, ReadParam, WithLayer, WithLayerLoadOp, WithLoadOp, WriteParam};
+pub use pass::{
+    FrameResources, ReadParam, WithClearColor, WithLayer, WithLayerClearColor, WithLayerLoadOp,
+    WithLoadOp, WriteParam,
+};
 pub use pipeline::{ComputePipelineBuilder, PipelineBuilder};
 pub use query::PassTiming;
+pub use sampler::SamplerBuilder;
 
-type ResizableFn = Box<dyn Fn(vk::Extent2D) -> ImageDesc>;
+use image::ResizableTemplate;
 
 /// Errors returned by graph operations.
 #[derive(Debug, Error)]
@@ -142,7 +149,7 @@ pub(crate) struct FrameData {
 ///         // record commands
 ///     });
 ///
-/// graph.end_frame()?;
+/// graph.end_frame(frame)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -155,7 +162,7 @@ pub struct Graph {
     pub(crate) present_mode: vk::PresentModeKHR,
     pub(crate) images: Vec<ImageEntry>,
     pub(crate) persistent_count: usize,
-    pub(crate) resizable_images: Vec<(usize, ResizableFn)>,
+    pub(crate) resizable_images: Vec<(usize, ResizableTemplate)>,
     pub(crate) buffer_states: HashMap<BufferHandle, BufferBarrierState>,
     pub(crate) pipeline_cache: vk::PipelineCache,
     pub(crate) pipeline_cache_path: Option<PathBuf>,
@@ -171,8 +178,11 @@ pub struct Graph {
     pub(crate) frame_index: usize,
     pub(crate) sc_graph_image: Option<Image>,
     pub(crate) pending_resize: Option<(u32, u32)>,
+    pub(crate) spirv_module_cache: HashMap<PathBuf, vk::ShaderModule>,
     #[cfg(debug_assertions)]
     pub(crate) pipeline_descs: HashMap<PipelineHandle, PipelineDesc>,
+    #[cfg(debug_assertions)]
+    pub(crate) shader_module_paths: HashMap<ShaderModuleHandle, PathBuf>,
     #[cfg(debug_assertions)]
     pub(crate) shader_watcher: ShaderWatcher,
     pub(crate) device: GpuDevice,
@@ -261,8 +271,11 @@ impl Graph {
             frame_index: 0,
             sc_graph_image: None,
             pending_resize: None,
+            spirv_module_cache: HashMap::new(),
             #[cfg(debug_assertions)]
             pipeline_descs: HashMap::new(),
+            #[cfg(debug_assertions)]
+            shader_module_paths: HashMap::new(),
             #[cfg(debug_assertions)]
             shader_watcher: ShaderWatcher::default(),
         })
@@ -318,6 +331,15 @@ impl Graph {
         self.pending_resize = Some((width, height));
     }
 
+    pub fn set_present_mode(&mut self, mode: PresentMode) {
+        let vk_mode = mode.to_vk();
+        if vk_mode != self.present_mode {
+            self.present_mode = vk_mode;
+            let ext = self.device.swapchain().extent();
+            self.pending_resize = Some((ext.width, ext.height));
+        }
+    }
+
     fn apply_resize(&mut self, width: u32, height: u32) -> Result<bool, GraphError> {
         self.device
             .recreate_swapchain((width, height), self.present_mode)
@@ -329,7 +351,12 @@ impl Graph {
         let updates: Vec<(usize, ImageDesc)> = self
             .resizable_images
             .iter()
-            .map(|(idx, f)| (*idx, f(new_extent)))
+            .map(|(idx, tpl)| {
+                let mut desc = tpl.desc.clone();
+                desc.extent.width = new_extent.width;
+                desc.extent.height = new_extent.height;
+                (*idx, desc)
+            })
             .collect();
 
         let mut any_recreated = false;
@@ -430,6 +457,10 @@ impl Drop for Graph {
         let alloc = self.device.allocator_mut();
         self.resources.drain_buffers(&device, alloc);
         self.resources.drain_pipelines(&device);
+        self.resources.drain_shader_modules();
+        for (_, module) in self.spirv_module_cache.drain() {
+            unsafe { device.destroy_shader_module(module, None) };
+        }
         self.resources.drain_samplers(&device);
         self.bindless.destroy();
         let alloc = self.device.allocator_mut();

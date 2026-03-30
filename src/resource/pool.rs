@@ -6,9 +6,10 @@ use smallvec::SmallVec;
 
 use super::ResourceError;
 use super::buffer::{BufferDesc, GpuBuffer};
-use super::handle::{BufferHandle, ImageHandle, PipelineHandle, SamplerHandle};
+use super::handle::{BufferHandle, ImageHandle, PipelineHandle, SamplerHandle, ShaderModuleHandle};
 use super::image::{GpuImage, ImageDesc};
 use super::pipeline::GpuPipeline;
+use super::shader::GpuShaderModule;
 use super::streaming::{StreamingBuffer, StreamingBufferHandle};
 
 pub(crate) struct ResourcePool {
@@ -16,6 +17,7 @@ pub(crate) struct ResourcePool {
     images: SlotMap<ImageHandle, GpuImage>,
     pipelines: SlotMap<PipelineHandle, GpuPipeline>,
     samplers: SlotMap<SamplerHandle, vk::Sampler>,
+    shader_modules: SlotMap<ShaderModuleHandle, GpuShaderModule>,
     streaming_buffers: SlotMap<StreamingBufferHandle, StreamingBuffer>,
 }
 
@@ -26,6 +28,7 @@ impl ResourcePool {
             images: SlotMap::with_key(),
             pipelines: SlotMap::with_key(),
             samplers: SlotMap::with_key(),
+            shader_modules: SlotMap::with_key(),
             streaming_buffers: SlotMap::with_key(),
         }
     }
@@ -143,6 +146,7 @@ impl ResourcePool {
         }
     }
 
+    #[cfg(debug_assertions)]
     pub(crate) fn replace_pipeline(
         &mut self,
         device: &ash::Device,
@@ -151,6 +155,29 @@ impl ResourcePool {
     ) {
         if let Some(slot) = self.pipelines.get_mut(handle) {
             std::mem::replace(slot, new).destroy(device);
+        }
+    }
+
+    pub(crate) fn insert_shader_module(&mut self, module: GpuShaderModule) -> ShaderModuleHandle {
+        self.shader_modules.insert(module)
+    }
+
+    pub(crate) fn get_shader_module(&self, handle: ShaderModuleHandle) -> Option<&GpuShaderModule> {
+        self.shader_modules.get(handle)
+    }
+
+    pub(crate) fn destroy_shader_module(&mut self, handle: ShaderModuleHandle) {
+        self.shader_modules.remove(handle);
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn update_shader_module_vk(
+        &mut self,
+        handle: ShaderModuleHandle,
+        module: vk::ShaderModule,
+    ) {
+        if let Some(entry) = self.shader_modules.get_mut(handle) {
+            entry.module = module;
         }
     }
 
@@ -183,6 +210,10 @@ impl ResourcePool {
         for (_, pipe) in self.pipelines.drain() {
             pipe.destroy(device);
         }
+    }
+
+    pub(crate) fn drain_shader_modules(&mut self) {
+        self.shader_modules.clear();
     }
 
     pub(crate) fn drain_samplers(&mut self, device: &ash::Device) {

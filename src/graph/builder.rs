@@ -45,6 +45,7 @@ pub struct GraphBuilder {
     gpu_preference: GpuPreference,
     frames_in_flight: usize,
     pipeline_cache_path: Option<PathBuf>,
+    srgb: bool,
 }
 
 impl GraphBuilder {
@@ -59,6 +60,7 @@ impl GraphBuilder {
             gpu_preference: GpuPreference::default(),
             frames_in_flight: 2,
             pipeline_cache_path: None,
+            srgb: true,
         }
     }
 
@@ -103,6 +105,11 @@ impl GraphBuilder {
         self
     }
 
+    pub fn srgb(mut self, enabled: bool) -> Self {
+        self.srgb = enabled;
+        self
+    }
+
     pub fn build(self) -> Result<Graph, GraphError> {
         if self.window_handle_error {
             return Err(GraphError::WindowHandle);
@@ -121,6 +128,7 @@ impl GraphBuilder {
             self.window_size,
             self.present_mode.to_vk(),
             matches!(self.gpu_preference, GpuPreference::LowPower),
+            self.srgb,
         )?;
 
         Graph::from_device(

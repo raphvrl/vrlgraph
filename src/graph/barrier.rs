@@ -181,6 +181,7 @@ mod tests {
             is_depth: false,
             load_op: LoadOp::Auto,
             layer: None,
+            clear_color: None,
         }
     }
 

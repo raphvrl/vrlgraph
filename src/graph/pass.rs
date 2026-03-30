@@ -22,6 +22,7 @@ pub(crate) struct PassAccess {
     pub is_depth: bool,
     pub load_op: LoadOp,
     pub layer: Option<u32>,
+    pub clear_color: Option<[f32; 4]>,
 }
 
 #[derive(Clone)]
@@ -115,6 +116,7 @@ fn make_write_access(
     access: Access,
     load_op: LoadOp,
     layer: Option<u32>,
+    clear_color: Option<[f32; 4]>,
 ) -> PassAccess {
     PassAccess {
         image,
@@ -125,6 +127,7 @@ fn make_write_access(
         is_depth: access.is_depth_attachment(),
         load_op,
         layer,
+        clear_color,
     }
 }
 
@@ -141,6 +144,7 @@ impl ReadParam for (Image, Access) {
             is_depth: false,
             load_op: LoadOp::Auto,
             layer: None,
+            clear_color: None,
         });
     }
 }
@@ -150,7 +154,7 @@ impl WriteParam for (Image, Access) {
         let (image, access) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
         ctx.writes
-            .push(make_write_access(image, access, LoadOp::Auto, None));
+            .push(make_write_access(image, access, LoadOp::Auto, None, None));
     }
 }
 
@@ -159,7 +163,7 @@ impl WriteParam for WithLoadOp {
         let WithLoadOp(image, access, load_op) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
         ctx.writes
-            .push(make_write_access(image, access, load_op, None));
+            .push(make_write_access(image, access, load_op, None, None));
     }
 }
 
@@ -167,8 +171,13 @@ impl WriteParam for WithLayer {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLayer(image, access, layer) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes
-            .push(make_write_access(image, access, LoadOp::Auto, Some(layer)));
+        ctx.writes.push(make_write_access(
+            image,
+            access,
+            LoadOp::Auto,
+            Some(layer),
+            None,
+        ));
     }
 }
 
@@ -177,7 +186,55 @@ impl WriteParam for WithLayerLoadOp {
         let WithLayerLoadOp(image, access, load_op, layer) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
         ctx.writes
-            .push(make_write_access(image, access, load_op, Some(layer)));
+            .push(make_write_access(image, access, load_op, Some(layer), None));
+    }
+}
+
+/// An image write that clears the attachment to a specific color at the start
+/// of the pass. Implies [`LoadOp::Clear`].
+///
+/// ```rust,no_run
+/// # use vrlgraph::prelude::*;
+/// # use vrlgraph::graph::WithClearColor;
+/// # fn example(graph: &mut Graph, frame: &Frame) {
+/// graph.render_pass("main")
+///     .write(WithClearColor(frame.backbuffer, Access::ColorAttachment, [0.1, 0.2, 0.3, 1.0]))
+///     .execute(|cmd, res| { /* ... */ });
+/// # }
+/// ```
+pub struct WithClearColor(pub Image, pub Access, pub [f32; 4]);
+
+/// An image write targeting a single layer with a specific clear color.
+pub struct WithLayerClearColor(pub Image, pub Access, pub [f32; 4], pub u32);
+
+impl sealed::Sealed for WithClearColor {}
+impl sealed::Sealed for WithLayerClearColor {}
+
+impl WriteParam for WithClearColor {
+    fn apply_write(self, ctx: &mut PassContext<'_>) {
+        let WithClearColor(image, access, color) = self;
+        ctx.images[image.0 as usize].usage |= access.usage_flags();
+        ctx.writes.push(make_write_access(
+            image,
+            access,
+            LoadOp::Clear,
+            None,
+            Some(color),
+        ));
+    }
+}
+
+impl WriteParam for WithLayerClearColor {
+    fn apply_write(self, ctx: &mut PassContext<'_>) {
+        let WithLayerClearColor(image, access, color, layer) = self;
+        ctx.images[image.0 as usize].usage |= access.usage_flags();
+        ctx.writes.push(make_write_access(
+            image,
+            access,
+            LoadOp::Clear,
+            Some(layer),
+            Some(color),
+        ));
     }
 }
 
@@ -313,7 +370,7 @@ impl<'a> FrameResources<'a> {
     ///
     /// The image must have been created with `SAMPLED` usage (e.g. via
     /// [`Graph::load_texture`](crate::graph::Graph::load_texture) or with
-    /// `vk::ImageUsageFlags::SAMPLED`).
+    /// `ash::vk::ImageUsageFlags::SAMPLED`).
     pub fn sampled_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .sampled_index
@@ -323,7 +380,7 @@ impl<'a> FrameResources<'a> {
 
     /// Returns the bindless storage image index as a `u32` ready for push constants.
     ///
-    /// The image must have been created with `vk::ImageUsageFlags::STORAGE`.
+    /// The image must have been created with `ash::vk::ImageUsageFlags::STORAGE`.
     pub fn storage_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .storage_index
@@ -334,7 +391,7 @@ impl<'a> FrameResources<'a> {
     /// Returns the bindless cubemap index as a `u32` ready for push constants.
     ///
     /// The image must have been created with [`ImageKind::Cubemap`](crate::resource::ImageKind::Cubemap)
-    /// (or `CubemapArray`) and `vk::ImageUsageFlags::SAMPLED`.
+    /// (or `CubemapArray`) and `ash::vk::ImageUsageFlags::SAMPLED`.
     pub fn cubemap_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .cubemap_index
@@ -345,7 +402,7 @@ impl<'a> FrameResources<'a> {
     /// Returns the bindless 2D array index as a `u32` ready for push constants.
     ///
     /// The image must have been created with [`ImageKind::Image2DArray`](crate::resource::ImageKind::Image2DArray)
-    /// and `vk::ImageUsageFlags::SAMPLED`.
+    /// and `ash::vk::ImageUsageFlags::SAMPLED`.
     pub fn array_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .array_index

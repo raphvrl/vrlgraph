@@ -27,7 +27,7 @@ pub struct BufferDesc {
 /// Pass a reference directly to [`Cmd::bind_vertex_buffer`](crate::graph::Cmd::bind_vertex_buffer),
 /// [`Cmd::bind_index_buffer`](crate::graph::Cmd::bind_index_buffer), and the indirect draw/dispatch
 /// methods. Use `device_address` to pass the buffer as a raw 64-bit GPU pointer via push constants
-/// (requires [`vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS`] at creation time).
+/// (requires [`ash::vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS`] at creation time).
 pub struct GpuBuffer {
     /// The underlying `VkBuffer`.
     pub raw: vk::Buffer,
