@@ -101,10 +101,6 @@ impl<'g> PassSetup<'g> {
 
 impl Graph {
     pub fn render_pass(&mut self, name: &'static str) -> PassSetup<'_> {
-        assert!(
-            self.frame_active,
-            "render_pass() called outside begin_frame/flush"
-        );
         PassSetup {
             graph: self,
             name,
@@ -117,10 +113,6 @@ impl Graph {
     }
 
     pub fn compute_pass(&mut self, name: &'static str) -> PassSetup<'_> {
-        assert!(
-            self.frame_active,
-            "compute_pass() called outside begin_frame/flush"
-        );
         PassSetup {
             graph: self,
             name,
@@ -133,11 +125,6 @@ impl Graph {
     }
 
     pub fn begin_frame(&mut self) -> Result<Frame, GraphError> {
-        assert!(
-            !self.frame_active,
-            "begin_frame() called twice without end_frame()"
-        );
-
         let resized = if let Some((w, h)) = self.pending_resize.take() {
             self.apply_resize(w, h)?
         } else {
@@ -220,12 +207,7 @@ impl Graph {
         })
     }
 
-    pub fn end_frame(&mut self) -> Result<(), GraphError> {
-        assert!(
-            self.frame_active,
-            "end_frame() called without begin_frame()"
-        );
-
+    pub fn end_frame(&mut self, _frame: Frame) -> Result<(), GraphError> {
         let pending = std::mem::take(&mut self.pending_passes);
         let live_images = self.collect_live_images(&pending);
         let passes = dag::sort_and_cull_passes(pending, &live_images)

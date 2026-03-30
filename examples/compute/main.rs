@@ -132,7 +132,7 @@ impl State {
                 cmd.draw(3, 1);
             });
 
-        self.graph.end_frame()?;
+        self.graph.end_frame(frame)?;
         Ok(())
     }
 

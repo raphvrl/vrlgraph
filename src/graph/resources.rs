@@ -83,10 +83,6 @@ pub(super) fn update_bindless(
 
 impl Graph {
     pub fn create_transient(&mut self, desc: ImageDesc) -> Image {
-        assert!(
-            self.frame_active,
-            "create_transient() must be called after begin_frame()"
-        );
         let h = Image(self.images.len() as u32);
         self.images.push(ImageEntry::transient(desc));
         h

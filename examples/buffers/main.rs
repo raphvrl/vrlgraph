@@ -143,7 +143,7 @@ impl State {
                 cmd.draw_indexed(INDICES.len() as u32, 1, 0, 0);
             });
 
-        self.graph.end_frame()?;
+        self.graph.end_frame(frame)?;
         Ok(())
     }
 

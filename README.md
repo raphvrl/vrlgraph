@@ -61,7 +61,7 @@ loop {
             cmd.draw(3, 1);
         });
 
-    graph.end_frame()?;
+    graph.end_frame(frame)?;
 }
 ```
 
@@ -94,7 +94,7 @@ let frame = graph.begin_frame()?;
 
 // declare passes here
 
-graph.end_frame()?;
+graph.end_frame(frame)?;
 ```
 
 If the swapchain is out of date (e.g. the window was minimized and restored), `begin_frame` returns `GraphError::SwapchainOutOfDate`. The standard response is to call `graph.resize(width, height)` and skip the current frame.
@@ -678,7 +678,7 @@ graph.destroy_sampler(sampler);
 The graph inserts GPU timestamp queries around each pass. After `end_frame` returns, `pass_timings` gives you the GPU execution time of every pass in the previous frame.
 
 ```rust,ignore
-graph.end_frame()?;
+graph.end_frame(frame)?;
 
 for timing in graph.pass_timings() {
     println!("{}: {:.2} us", timing.name, timing.gpu_ns as f64 / 1000.0);

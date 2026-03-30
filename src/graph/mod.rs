@@ -147,7 +147,7 @@ pub(crate) struct FrameData {
 ///         // record commands
 ///     });
 ///
-/// graph.end_frame()?;
+/// graph.end_frame(frame)?;
 /// # Ok(())
 /// # }
 /// ```
