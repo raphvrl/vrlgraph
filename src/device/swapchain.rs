@@ -218,8 +218,7 @@ impl Swapchain {
         formats
             .iter()
             .find(|f| {
-                f.format == preferred_format
-                    && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+                f.format == preferred_format && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
             })
             .or_else(|| {
                 formats.iter().find(|f| {

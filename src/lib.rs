@@ -19,7 +19,7 @@ pub mod prelude {
         StreamingBufferHandle, WithLayer, WithLayerLoadOp, WithLoadOp,
     };
 
-    pub use crate::resource::{Buffer, BufferDesc, ImageDesc, ImageKind, Pipeline};
+    pub use crate::resource::{Buffer, BufferDesc, ImageDesc, ImageKind, Pipeline, ShaderModule};
 
     pub use vrlgraph_derive::VertexInput;
 

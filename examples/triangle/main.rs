@@ -22,10 +22,13 @@ impl State {
             .present_mode(PresentMode::Mailbox)
             .build()?;
 
+        let vs = graph.shader_module("shaders/triangle.vert.spv", "main")?;
+        let fs = graph.shader_module("shaders/triangle.frag.spv", "main")?;
+
         let pipeline = graph
-            .graphics_pipeline()
-            .vertex_shader("shaders/triangle.vert.spv")?
-            .fragment_shader("shaders/triangle.frag.spv")?
+            .graphics_pipeline("triangle")
+            .vertex_shader(vs)
+            .fragment_shader(fs)
             .build()?;
 
         Ok(Self {

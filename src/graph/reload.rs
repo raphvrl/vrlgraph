@@ -1,11 +1,13 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
 use ash::vk;
 use notify::{EventKind, RecursiveMode, Watcher};
 use smallvec::SmallVec;
+
+use crate::resource::ShaderModuleHandle;
 
 #[derive(Clone)]
 pub(crate) struct PipelineDesc {
@@ -15,29 +17,27 @@ pub(crate) struct PipelineDesc {
 #[derive(Clone)]
 pub(crate) enum PipelineKind {
     Graphics {
-        vertex_path: PathBuf,
-        fragment_path: PathBuf,
+        vertex: ShaderModuleHandle,
+        fragment: ShaderModuleHandle,
         color_formats: Vec<vk::Format>,
         depth_format: Option<vk::Format>,
         vertex_bindings: Vec<vk::VertexInputBindingDescription>,
         vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
     },
     Compute {
-        path: PathBuf,
+        shader: ShaderModuleHandle,
     },
 }
 
 impl PipelineDesc {
-    pub fn shader_paths(&self) -> SmallVec<[&Path; 2]> {
+    pub fn shader_module_handles(&self) -> SmallVec<[ShaderModuleHandle; 2]> {
         match &self.kind {
             PipelineKind::Graphics {
-                vertex_path,
-                fragment_path,
-                ..
+                vertex, fragment, ..
             } => {
-                smallvec::smallvec![vertex_path.as_path(), fragment_path.as_path()]
+                smallvec::smallvec![*vertex, *fragment]
             }
-            PipelineKind::Compute { path } => smallvec::smallvec![path.as_path()],
+            PipelineKind::Compute { shader } => smallvec::smallvec![*shader],
         }
     }
 }
@@ -72,7 +72,7 @@ impl ShaderWatcher {
         })
     }
 
-    pub fn watch(&mut self, path: &Path) {
+    pub fn watch(&mut self, path: &std::path::Path) {
         if let Ok(canonical) = path.canonicalize()
             && self.watched.insert(canonical.clone())
             && let Err(e) = self._watcher.watch(&canonical, RecursiveMode::NonRecursive)

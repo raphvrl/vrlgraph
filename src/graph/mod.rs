@@ -30,7 +30,9 @@ use thiserror::Error;
 
 use self::image::ImageEntry;
 use crate::device::{DeviceError, GpuDevice};
-use crate::resource::{BufferHandle, ImageDesc, PipelineHandle, ResourceError, ResourcePool};
+use crate::resource::{BufferHandle, ImageDesc, ResourceError, ResourcePool};
+#[cfg(debug_assertions)]
+use crate::resource::{PipelineHandle, ShaderModuleHandle};
 use barrier::BufferBarrierState;
 use bindless::BindlessDescriptorTable;
 use command::{CommandError, CommandPool};
@@ -171,8 +173,11 @@ pub struct Graph {
     pub(crate) frame_index: usize,
     pub(crate) sc_graph_image: Option<Image>,
     pub(crate) pending_resize: Option<(u32, u32)>,
+    pub(crate) spirv_module_cache: HashMap<PathBuf, vk::ShaderModule>,
     #[cfg(debug_assertions)]
     pub(crate) pipeline_descs: HashMap<PipelineHandle, PipelineDesc>,
+    #[cfg(debug_assertions)]
+    pub(crate) shader_module_paths: HashMap<ShaderModuleHandle, PathBuf>,
     #[cfg(debug_assertions)]
     pub(crate) shader_watcher: ShaderWatcher,
     pub(crate) device: GpuDevice,
@@ -261,8 +266,11 @@ impl Graph {
             frame_index: 0,
             sc_graph_image: None,
             pending_resize: None,
+            spirv_module_cache: HashMap::new(),
             #[cfg(debug_assertions)]
             pipeline_descs: HashMap::new(),
+            #[cfg(debug_assertions)]
+            shader_module_paths: HashMap::new(),
             #[cfg(debug_assertions)]
             shader_watcher: ShaderWatcher::default(),
         })
@@ -430,6 +438,10 @@ impl Drop for Graph {
         let alloc = self.device.allocator_mut();
         self.resources.drain_buffers(&device, alloc);
         self.resources.drain_pipelines(&device);
+        self.resources.drain_shader_modules();
+        for (_, module) in self.spirv_module_cache.drain() {
+            unsafe { device.destroy_shader_module(module, None) };
+        }
         self.resources.drain_samplers(&device);
         self.bindless.destroy();
         let alloc = self.device.allocator_mut();

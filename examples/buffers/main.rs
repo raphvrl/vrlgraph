@@ -80,10 +80,13 @@ impl State {
 
         let colors_buf = graph.storage_buffer("colors", &COLORS)?;
 
+        let vs = graph.shader_module("shaders/mesh.vert.spv", "main")?;
+        let fs = graph.shader_module("shaders/mesh.frag.spv", "main")?;
+
         let pipeline = graph
-            .graphics_pipeline()
-            .vertex_shader("shaders/mesh.vert.spv")?
-            .fragment_shader("shaders/mesh.frag.spv")?
+            .graphics_pipeline("buffers")
+            .vertex_shader(vs)
+            .fragment_shader(fs)
             .vertex_input::<Vertex>()
             .build()?;
 

@@ -63,15 +63,15 @@ impl State {
                 .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
         )?;
 
-        let compute_pipeline = graph
-            .compute_pipeline()
-            .shader("shaders/fill.comp.spv")?
-            .build()?;
+        let cs = graph.shader_module("shaders/fill.comp.spv", "main")?;
+        let compute_pipeline = graph.compute_pipeline("fill").shader(cs).build()?;
 
+        let vs = graph.shader_module("shaders/fullscreen.vert.spv", "main")?;
+        let fs = graph.shader_module("shaders/blit.frag.spv", "main")?;
         let graphics_pipeline = graph
-            .graphics_pipeline()
-            .vertex_shader("shaders/fullscreen.vert.spv")?
-            .fragment_shader("shaders/blit.frag.spv")?
+            .graphics_pipeline("blit")
+            .vertex_shader(vs)
+            .fragment_shader(fs)
             .build()?;
 
         Ok(Self {
