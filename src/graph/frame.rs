@@ -400,7 +400,9 @@ impl Graph {
                         .load_op(load_op)
                         .store_op(vk::AttachmentStoreOp::STORE)
                         .clear_value(vk::ClearValue {
-                            color: vk::ClearColorValue { float32: [0.0; 4] },
+                            color: vk::ClearColorValue {
+                                float32: w.clear_color.unwrap_or([0.0; 4]),
+                            },
                         })
                 })
                 .collect();

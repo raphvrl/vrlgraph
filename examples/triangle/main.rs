@@ -1,3 +1,4 @@
+use vrlgraph::graph::WithClearColor;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -46,9 +47,15 @@ impl State {
         let pipeline = self.pipeline;
         let extent = frame.extent;
 
+        let backbuffer = frame.backbuffer;
+
         self.graph
             .render_pass("triangle")
-            .write((frame.backbuffer, Access::ColorAttachment))
+            .write(WithClearColor(
+                backbuffer,
+                Access::ColorAttachment,
+                [0.1, 0.2, 0.3, 1.0],
+            ))
             .execute(move |cmd, res| {
                 cmd.bind_graphics_pipeline(res.pipeline(pipeline));
                 cmd.set_viewport_scissor(extent);

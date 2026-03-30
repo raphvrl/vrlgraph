@@ -51,7 +51,10 @@ pub use bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Sampler, Storage};
 pub use builder::{GpuPreference, GraphBuilder, PresentMode};
 pub use command::Cmd;
 pub use frame::PassSetup;
-pub use pass::{FrameResources, ReadParam, WithLayer, WithLayerLoadOp, WithLoadOp, WriteParam};
+pub use pass::{
+    FrameResources, ReadParam, WithClearColor, WithLayer, WithLayerClearColor, WithLayerLoadOp,
+    WithLoadOp, WriteParam,
+};
 pub use pipeline::{ComputePipelineBuilder, PipelineBuilder};
 pub use query::PassTiming;
 
