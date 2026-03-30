@@ -496,10 +496,10 @@ impl Graph {
     ///
     /// Like [`vertex_buffer`](Graph::vertex_buffer), data is uploaded via a
     /// synchronous staging transfer. `T` is typically `u16` or `u32`.
-    pub fn index_buffer<T: bytemuck::Pod>(
+    pub fn index_buffer(
         &mut self,
         label: &str,
-        data: &[T],
+        data: &[u32],
     ) -> Result<Buffer, GraphError> {
         self.upload_buffer_labeled(
             bytemuck::cast_slice(data),
@@ -548,10 +548,10 @@ impl Graph {
     ///
     /// Like [`vertex_buffer_dynamic`](Graph::vertex_buffer_dynamic), directly writable
     /// from the CPU via [`Graph::write_buffer`]. `T` is typically `u16` or `u32`.
-    pub fn index_buffer_dynamic<T: bytemuck::Pod>(
+    pub fn index_buffer_dynamic(
         &mut self,
         label: &str,
-        data: &[T],
+        data: &[u32],
     ) -> Result<Buffer, GraphError> {
         self.host_buffer_with_data(label, data, vk::BufferUsageFlags::INDEX_BUFFER)
     }
