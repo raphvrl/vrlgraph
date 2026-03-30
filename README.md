@@ -36,10 +36,13 @@ let mut graph = Graph::builder()
     .size(1280, 720)
     .build()?;
 
+let vs = graph.shader_module("shaders/triangle.vert.spv", "main")?;
+let fs = graph.shader_module("shaders/triangle.frag.spv", "main")?;
+
 let pipeline = graph
-    .graphics_pipeline()
-    .vertex_shader("shaders/triangle.vert.spv")?
-    .fragment_shader("shaders/triangle.frag.spv")?
+    .graphics_pipeline("triangle")
+    .vertex_shader(vs)
+    .fragment_shader(fs)
     .build()?;
 
 loop {
@@ -393,10 +396,13 @@ struct Vertex {
     uv:     [f32; 2],
 }
 
+let vs = graph.shader_module("shaders/mesh.vert.spv", "main")?;
+let fs = graph.shader_module("shaders/pbr.frag.spv", "main")?;
+
 let pipeline = graph
-    .graphics_pipeline()
-    .vertex_shader("shaders/mesh.vert.spv")?
-    .fragment_shader("shaders/pbr.frag.spv")?
+    .graphics_pipeline("mesh")
+    .vertex_shader(vs)
+    .fragment_shader(fs)
     .color_formats(&[vk::Format::R16G16B16A16_SFLOAT])
     .depth_format(vk::Format::D32_SFLOAT)
     .vertex_input::<Vertex>()
@@ -456,9 +462,11 @@ All pipelines share the single global pipeline layout (set 0 = bindless table, 2
 ### Compute pipelines
 
 ```rust,ignore
+let cs = graph.shader_module("shaders/tonemap.comp.spv", "main")?;
+
 let pipeline = graph
-    .compute_pipeline()
-    .shader("shaders/tonemap.comp.spv")?
+    .compute_pipeline("tonemap")
+    .shader(cs)
     .build()?;
 ```
 
@@ -662,8 +670,7 @@ let sampler = graph.create_sampler()
     .address_mode(AddressMode::REPEAT)
     .build()?;
 
-// sampler.raw()  -> u32, pass to shaders via push constants (binding 2)
-// sampler.handle -> for destroy_sampler
+// sampler.raw() -> u32, pass to shaders via push constants (binding 2)
 graph.destroy_sampler(sampler);
 ```
 
