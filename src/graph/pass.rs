@@ -190,6 +190,7 @@ impl WriteParam for WithLayerLoadOp {
 ///
 /// ```rust,no_run
 /// # use vrlgraph::prelude::*;
+/// # use vrlgraph::graph::WithClearColor;
 /// # fn example(graph: &mut Graph, frame: &Frame) {
 /// graph.render_pass("main")
 ///     .write(WithClearColor(frame.backbuffer, Access::ColorAttachment, [0.1, 0.2, 0.3, 1.0]))
@@ -354,7 +355,7 @@ impl<'a> FrameResources<'a> {
     ///
     /// The image must have been created with `SAMPLED` usage (e.g. via
     /// [`Graph::load_texture`](crate::graph::Graph::load_texture) or with
-    /// `vk::ImageUsageFlags::SAMPLED`).
+    /// `ash::vk::ImageUsageFlags::SAMPLED`).
     pub fn sampled_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .sampled_index
@@ -364,7 +365,7 @@ impl<'a> FrameResources<'a> {
 
     /// Returns the bindless storage image index as a `u32` ready for push constants.
     ///
-    /// The image must have been created with `vk::ImageUsageFlags::STORAGE`.
+    /// The image must have been created with `ash::vk::ImageUsageFlags::STORAGE`.
     pub fn storage_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .storage_index
@@ -375,7 +376,7 @@ impl<'a> FrameResources<'a> {
     /// Returns the bindless cubemap index as a `u32` ready for push constants.
     ///
     /// The image must have been created with [`ImageKind::Cubemap`](crate::resource::ImageKind::Cubemap)
-    /// (or `CubemapArray`) and `vk::ImageUsageFlags::SAMPLED`.
+    /// (or `CubemapArray`) and `ash::vk::ImageUsageFlags::SAMPLED`.
     pub fn cubemap_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .cubemap_index
@@ -386,7 +387,7 @@ impl<'a> FrameResources<'a> {
     /// Returns the bindless 2D array index as a `u32` ready for push constants.
     ///
     /// The image must have been created with [`ImageKind::Image2DArray`](crate::resource::ImageKind::Image2DArray)
-    /// and `vk::ImageUsageFlags::SAMPLED`.
+    /// and `ash::vk::ImageUsageFlags::SAMPLED`.
     pub fn array_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]
             .array_index

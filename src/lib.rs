@@ -3,10 +3,10 @@
 pub mod device;
 pub mod graph;
 pub mod resource;
+pub mod types;
 pub mod vertex;
 
-#[doc(hidden)]
-pub use ash::vk;
+pub use ash;
 
 pub use vertex::{VertexAttribute, VertexInput};
 pub use vrlgraph_derive::VertexInput;
@@ -21,7 +21,7 @@ pub mod prelude {
 
     pub use crate::resource::{Buffer, BufferDesc, ImageDesc, ImageKind, Pipeline, ShaderModule};
 
-    pub use vrlgraph_derive::VertexInput;
+    pub use crate::types::*;
 
-    pub use ash::vk;
+    pub use vrlgraph_derive::VertexInput;
 }

@@ -52,7 +52,7 @@ impl Graph {
         Ok(ShaderModule(handle))
     }
 
-    /// Destroys a shader module handle. The underlying `vk::ShaderModule` is shared via the
+    /// Destroys a shader module handle. The underlying `ash::vk::ShaderModule` is shared via the
     /// path cache and will be freed when the graph is dropped.
     pub fn destroy_shader_module(&mut self, handle: ShaderModule) {
         self.resources.destroy_shader_module(handle.0);

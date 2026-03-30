@@ -5,6 +5,7 @@ use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::resource::{GpuBuffer, GpuPipeline};
+use crate::types::{ColorWriteMask, CompareOp, CullMode, FrontFace, PolygonMode, Topology};
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -118,14 +119,14 @@ impl Cmd {
         self.set_depth_bias_enable(false);
         self.set_primitive_restart_enable(false);
 
-        self.set_cull_mode(vk::CullModeFlags::NONE);
-        self.set_front_face(vk::FrontFace::COUNTER_CLOCKWISE);
-        self.set_primitive_topology(vk::PrimitiveTopology::TRIANGLE_LIST);
+        self.set_cull_mode(CullMode::NONE);
+        self.set_front_face(FrontFace::CounterClockwise);
+        self.set_primitive_topology(Topology::TriangleList);
         self.set_depth_test_enable(false);
         self.set_depth_write_enable(false);
-        self.set_depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
+        self.set_depth_compare_op(CompareOp::LessOrEqual);
 
-        self.set_polygon_mode(vk::PolygonMode::FILL);
+        self.set_polygon_mode(PolygonMode::Fill);
         self.set_default_blend_state(1);
     }
 
@@ -175,16 +176,16 @@ impl Cmd {
         }
     }
 
-    pub fn set_cull_mode(&self, mode: vk::CullModeFlags) {
-        unsafe { self.device.cmd_set_cull_mode(self.raw, mode) };
+    pub fn set_cull_mode(&self, mode: CullMode) {
+        unsafe { self.device.cmd_set_cull_mode(self.raw, mode.into()) };
     }
 
-    pub fn set_front_face(&self, face: vk::FrontFace) {
-        unsafe { self.device.cmd_set_front_face(self.raw, face) };
+    pub fn set_front_face(&self, face: FrontFace) {
+        unsafe { self.device.cmd_set_front_face(self.raw, face.into()) };
     }
 
-    pub fn set_primitive_topology(&self, topology: vk::PrimitiveTopology) {
-        unsafe { self.device.cmd_set_primitive_topology(self.raw, topology) };
+    pub fn set_primitive_topology(&self, topology: Topology) {
+        unsafe { self.device.cmd_set_primitive_topology(self.raw, topology.into()) };
     }
 
     pub fn set_depth_test_enable(&self, enable: bool) {
@@ -195,12 +196,12 @@ impl Cmd {
         unsafe { self.device.cmd_set_depth_write_enable(self.raw, enable) };
     }
 
-    pub fn set_depth_compare_op(&self, op: vk::CompareOp) {
-        unsafe { self.device.cmd_set_depth_compare_op(self.raw, op) };
+    pub fn set_depth_compare_op(&self, op: CompareOp) {
+        unsafe { self.device.cmd_set_depth_compare_op(self.raw, op.into()) };
     }
 
-    pub fn set_polygon_mode(&self, mode: vk::PolygonMode) {
-        unsafe { self.ext_ds3.cmd_set_polygon_mode(self.raw, mode) };
+    pub fn set_polygon_mode(&self, mode: PolygonMode) {
+        unsafe { self.ext_ds3.cmd_set_polygon_mode(self.raw, mode.into()) };
     }
 
     pub fn set_color_blend_enable(&self, first: u32, enables: &[vk::Bool32]) {
@@ -217,10 +218,12 @@ impl Cmd {
         };
     }
 
-    pub fn set_color_write_mask(&self, first: u32, masks: &[vk::ColorComponentFlags]) {
+    pub fn set_color_write_mask(&self, first: u32, masks: &[ColorWriteMask]) {
+        let raw: SmallVec<[vk::ColorComponentFlags; 4]> =
+            masks.iter().map(|m| (*m).into()).collect();
         unsafe {
             self.ext_ds3
-                .cmd_set_color_write_mask(self.raw, first, masks)
+                .cmd_set_color_write_mask(self.raw, first, &raw)
         };
     }
 
@@ -594,8 +597,8 @@ impl Cmd {
     /// blend state is needed.
     pub fn set_default_blend_state(&self, count: u32) {
         let enables: SmallVec<[vk::Bool32; 4]> = smallvec::smallvec![vk::FALSE; count as usize];
-        let masks: SmallVec<[vk::ColorComponentFlags; 4]> =
-            smallvec::smallvec![vk::ColorComponentFlags::RGBA; count as usize];
+        let masks: SmallVec<[ColorWriteMask; 4]> =
+            smallvec::smallvec![ColorWriteMask::RGBA; count as usize];
         self.set_color_blend_enable(0, &enables);
         self.set_color_write_mask(0, &masks);
     }

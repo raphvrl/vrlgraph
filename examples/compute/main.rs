@@ -5,6 +5,7 @@ use winit::window::{Window, WindowId};
 
 use bytemuck::{Pod, Zeroable};
 
+use vrlgraph::ash::vk;
 use vrlgraph::prelude::*;
 
 #[repr(C)]

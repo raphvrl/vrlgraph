@@ -65,12 +65,12 @@ fn impl_vertex_input(input: DeriveInput) -> syn::Result<TokenStream2> {
             let location = location as u32;
 
             let format_expr = match parse_format_attr(&field.attrs)? {
-                Some(fmt) => quote! { ::vrlgraph::vk::Format::#fmt },
+                Some(fmt) => quote! { ::vrlgraph::ash::vk::Format::#fmt },
                 None => quote! { <#field_ty as ::vrlgraph::VertexAttribute>::FORMAT },
             };
 
             Ok(quote! {
-                ::vrlgraph::vk::VertexInputAttributeDescription {
+                ::vrlgraph::ash::vk::VertexInputAttributeDescription {
                     location: #location,
                     binding: 0,
                     format: #format_expr,
@@ -82,14 +82,14 @@ fn impl_vertex_input(input: DeriveInput) -> syn::Result<TokenStream2> {
 
     Ok(quote! {
         impl ::vrlgraph::VertexInput for #name {
-            const BINDINGS: &'static [::vrlgraph::vk::VertexInputBindingDescription] = &[
-                ::vrlgraph::vk::VertexInputBindingDescription {
+            const BINDINGS: &'static [::vrlgraph::ash::vk::VertexInputBindingDescription] = &[
+                ::vrlgraph::ash::vk::VertexInputBindingDescription {
                     binding: 0,
                     stride: ::std::mem::size_of::<#name>() as u32,
                     input_rate: #input_rate,
                 },
             ];
-            const ATTRIBUTES: &'static [::vrlgraph::vk::VertexInputAttributeDescription] = &[
+            const ATTRIBUTES: &'static [::vrlgraph::ash::vk::VertexInputAttributeDescription] = &[
                 #(#attribute_entries),*
             ];
         }
@@ -110,8 +110,8 @@ fn parse_input_rate(attrs: &[syn::Attribute]) -> syn::Result<TokenStream2> {
             })?;
             if let Some(r) = rate {
                 return match r.to_string().as_str() {
-                    "vertex" => Ok(quote! { ::vrlgraph::vk::VertexInputRate::VERTEX }),
-                    "instance" => Ok(quote! { ::vrlgraph::vk::VertexInputRate::INSTANCE }),
+                    "vertex" => Ok(quote! { ::vrlgraph::ash::vk::VertexInputRate::VERTEX }),
+                    "instance" => Ok(quote! { ::vrlgraph::ash::vk::VertexInputRate::INSTANCE }),
                     _ => Err(syn::Error::new_spanned(
                         r,
                         "expected `vertex` or `instance`",
@@ -120,7 +120,7 @@ fn parse_input_rate(attrs: &[syn::Attribute]) -> syn::Result<TokenStream2> {
             }
         }
     }
-    Ok(quote! { ::vrlgraph::vk::VertexInputRate::VERTEX })
+    Ok(quote! { ::vrlgraph::ash::vk::VertexInputRate::VERTEX })
 }
 
 fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
