@@ -241,15 +241,13 @@ graph.render_pass("stereo_geometry")
 
 ### Transient images
 
-Transient images live for a single frame. The graph allocates and destroys them automatically. Use them for intermediate results that are not needed across frames.
+Transient images live for a single frame. The graph allocates and destroys them automatically. Use them for intermediate results that are not needed across frames. When no extent is specified, the swapchain extent is used.
 
 ```rust,ignore
-let gbuffer_albedo = graph.create_transient(ImageDesc {
-    extent: vk::Extent3D { width: 1920, height: 1080, depth: 1 },
-    format: vk::Format::R8G8B8A8_UNORM,
-    label: "gbuffer_albedo".into(),
-    ..Default::default()
-});
+let gbuffer_albedo = graph.transient_image()
+    .format(vk::Format::R8G8B8A8_UNORM)
+    .label("gbuffer_albedo")
+    .build()?;
 ```
 
 ### Persistent images
@@ -257,12 +255,11 @@ let gbuffer_albedo = graph.create_transient(ImageDesc {
 Persistent images survive across frames and must be destroyed manually. Use them for render targets you allocate once at startup (shadow maps, lookup tables, etc.).
 
 ```rust,ignore
-let shadow_atlas = graph.create_persistent(ImageDesc {
-    extent: vk::Extent3D { width: 4096, height: 4096, depth: 1 },
-    format: vk::Format::D32_SFLOAT,
-    label: "shadow_atlas".into(),
-    ..Default::default()
-})?;
+let shadow_atlas = graph.persistent_image()
+    .format(vk::Format::D32_SFLOAT)
+    .extent(4096, 4096)
+    .label("shadow_atlas")
+    .build()?;
 
 // later, when no longer needed — also frees any bindless slots
 graph.destroy_image(shadow_atlas);
@@ -270,16 +267,15 @@ graph.destroy_image(shadow_atlas);
 
 ### Resizable images
 
-Resizable images are persistent images whose descriptor is a function of the swapchain extent. They are automatically recreated when the window is resized.
+Resizable images are persistent images that are automatically recreated when the window is resized. Call `.resizable()` on a persistent image builder. The extent defaults to the swapchain size.
 
 ```rust,ignore
-let hdr_buffer = graph.create_resizable(|ext| ImageDesc {
-    extent: vk::Extent3D { width: ext.width, height: ext.height, depth: 1 },
-    format: vk::Format::R16G16B16A16_SFLOAT,
-    usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-    label: "hdr_buffer".into(),
-    ..Default::default()
-})?;
+let hdr_buffer = graph.persistent_image()
+    .format(vk::Format::R16G16B16A16_SFLOAT)
+    .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)
+    .label("hdr_buffer")
+    .resizable()
+    .build()?;
 ```
 
 ### Textures
@@ -290,19 +286,23 @@ let hdr_buffer = graph.create_resizable(|ext| ImageDesc {
 let albedo = graph.load_texture("assets/wood_albedo.png")?;
 ```
 
-### ImageDesc fields
+### Image builder methods
 
-| Field | Type | Default | Description |
+| Method | Required | Default | Description |
 |---|---|---|---|
-| `extent` | `vk::Extent3D` | required | Width, height, depth |
-| `format` | `vk::Format` | required | Pixel format |
-| `mip_levels` | `u32` | `1` | Number of mip levels |
-| `samples` | `vk::SampleCountFlags` | `TYPE_1` | MSAA sample count |
-| `kind` | `ImageKind` | `Image2D` | Dimensionality |
-| `label` | `String` | `""` | Debug name |
-| `usage` | `vk::ImageUsageFlags` | empty | Vulkan usage flags |
+| `.format(vk::Format)` | yes | — | Pixel format |
+| `.extent(w, h)` | no | swapchain extent | Width and height |
+| `.extent_3d(w, h, d)` | no | swapchain extent, depth 1 | Width, height, and depth |
+| `.mip_levels(u32)` | no | `1` | Number of mip levels |
+| `.samples(SampleCount)` | no | `S1` | MSAA sample count |
+| `.array_2d(layers)` | no | `Image2D` | 2D array image |
+| `.cubemap()` | no | `Image2D` | Cubemap image |
+| `.cubemap_array(count)` | no | `Image2D` | Cubemap array image |
+| `.label(impl Into<String>)` | no | `""` | Debug name |
+| `.usage(vk::ImageUsageFlags)` | no | empty | Additional Vulkan usage flags |
+| `.resizable()` | no | `false` | Auto-recreate on window resize (persistent only) |
 
-**Important with bindless:** set `SAMPLED` and/or `STORAGE` explicitly in `usage` if you need to access the image by bindless index. The graph infers other usage flags (attachment, transfer) from pass accesses, but `SAMPLED`/`STORAGE` must be declared upfront so the bindless slot is allocated at creation time. Transient images are an exception — their usage is inferred from passes before slot allocation.
+**Important with bindless:** set `SAMPLED` and/or `STORAGE` explicitly in `.usage()` if you need to access the image by bindless index. The graph infers other usage flags (attachment, transfer) from pass accesses, but `SAMPLED`/`STORAGE` must be declared upfront so the bindless slot is allocated at creation time. Transient images are an exception — their usage is inferred from passes before slot allocation.
 
 ### ImageKind
 

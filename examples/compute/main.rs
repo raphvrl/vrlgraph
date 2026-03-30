@@ -44,17 +44,13 @@ impl State {
             .present_mode(PresentMode::Fifo)
             .build()?;
 
-        let storage_image = graph.create_resizable(|ext| ImageDesc {
-            extent: vk::Extent3D {
-                width: ext.width,
-                height: ext.height,
-                depth: 1,
-            },
-            format: vk::Format::R8G8B8A8_UNORM,
-            usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED,
-            label: "triangle_storage".to_string(),
-            ..Default::default()
-        })?;
+        let storage_image = graph
+            .persistent_image()
+            .format(vk::Format::R8G8B8A8_UNORM)
+            .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED)
+            .label("triangle_storage")
+            .resizable()
+            .build()?;
 
         let sampler = graph.create_sampler(
             &vk::SamplerCreateInfo::default()

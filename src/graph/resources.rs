@@ -5,7 +5,7 @@ use gpu_allocator::MemoryLocation;
 
 use super::bindless::{BindlessDescriptorTable, Sampler};
 use super::command::{Cmd, CommandPool};
-use super::image::{Image, ImageEntry};
+use super::image::{Image, ImageBuilder, ImageEntry, ImageOrigin};
 use super::{Graph, GraphError};
 use crate::resource::{
     Buffer, BufferDesc, GpuBuffer, ImageDesc, ImageHandle, ImageKind, ResourceError,
@@ -82,89 +82,19 @@ pub(super) fn update_bindless(
 }
 
 impl Graph {
-    pub fn create_transient(&mut self, desc: ImageDesc) -> Image {
-        let h = Image(self.images.len() as u32);
-        self.images.push(ImageEntry::transient(desc));
-        h
+    pub fn transient_image(&mut self) -> ImageBuilder<'_> {
+        ImageBuilder::new(self, ImageOrigin::Transient)
     }
 
-    pub fn create_persistent(&mut self, desc: ImageDesc) -> Result<Image, GraphError> {
-        assert!(
-            !self.frame_active,
-            "create_persistent() must be called outside the frame loop"
-        );
-        let h = Image(self.images.len() as u32);
-        self.images.push(ImageEntry::persistent(desc));
-        self.persistent_count += 1;
-
-        let entry = self.images.last_mut().expect("just pushed");
-        if !entry.usage.is_empty() {
-            let device = self.device.ash_device().clone();
-            let usage = entry.usage | vk::ImageUsageFlags::TRANSFER_DST;
-            let handle = self.resources.create_image(
-                &device,
-                self.device.allocator_mut(),
-                &entry.desc,
-                usage,
-                entry.aspect,
-            )?;
-            let view = self
-                .resources
-                .get_image(handle)
-                .expect("image just created")
-                .view;
-            register_bindless(entry, &mut self.bindless, view);
-            entry.handle = Some(handle);
-        }
-
-        Ok(h)
-    }
-
-    pub fn create_resizable(
-        &mut self,
-        desc_fn: impl Fn(vk::Extent2D) -> ImageDesc + 'static,
-    ) -> Result<Image, GraphError> {
-        assert!(
-            !self.frame_active,
-            "create_resizable() must be called outside the frame loop"
-        );
-        let extent = self.device.swapchain().extent();
-        let desc = desc_fn(extent);
-        let idx = self.images.len();
-        let h = Image(idx as u32);
-        self.images.push(ImageEntry::persistent(desc));
-        self.persistent_count += 1;
-        self.resizable_images.push((idx, Box::new(desc_fn)));
-
-        let entry = &mut self.images[idx];
-        if !entry.usage.is_empty() {
-            let device = self.device.ash_device().clone();
-            let usage = entry.usage | vk::ImageUsageFlags::TRANSFER_DST;
-            let handle = self.resources.create_image(
-                &device,
-                self.device.allocator_mut(),
-                &entry.desc,
-                usage,
-                entry.aspect,
-            )?;
-            let view = self
-                .resources
-                .get_image(handle)
-                .expect("image just created")
-                .view;
-            let entry = &mut self.images[idx];
-            register_bindless(entry, &mut self.bindless, view);
-            entry.handle = Some(handle);
-        }
-
-        Ok(h)
+    pub fn persistent_image(&mut self) -> ImageBuilder<'_> {
+        ImageBuilder::new(self, ImageOrigin::Persistent)
     }
 
     pub fn load_texture(&mut self, path: impl AsRef<Path>) -> Result<Image, GraphError> {
         self.load_texture_with(path, ImageDesc::default())
     }
 
-    pub fn load_texture_with(
+    pub(crate) fn load_texture_with(
         &mut self,
         path: impl AsRef<Path>,
         mut desc: ImageDesc,

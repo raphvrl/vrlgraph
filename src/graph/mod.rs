@@ -58,7 +58,7 @@ pub use pass::{
 pub use pipeline::{ComputePipelineBuilder, PipelineBuilder};
 pub use query::PassTiming;
 
-type ResizableFn = Box<dyn Fn(vk::Extent2D) -> ImageDesc>;
+use image::ResizableTemplate;
 
 /// Errors returned by graph operations.
 #[derive(Debug, Error)]
@@ -160,7 +160,7 @@ pub struct Graph {
     pub(crate) present_mode: vk::PresentModeKHR,
     pub(crate) images: Vec<ImageEntry>,
     pub(crate) persistent_count: usize,
-    pub(crate) resizable_images: Vec<(usize, ResizableFn)>,
+    pub(crate) resizable_images: Vec<(usize, ResizableTemplate)>,
     pub(crate) buffer_states: HashMap<BufferHandle, BufferBarrierState>,
     pub(crate) pipeline_cache: vk::PipelineCache,
     pub(crate) pipeline_cache_path: Option<PathBuf>,
@@ -340,7 +340,12 @@ impl Graph {
         let updates: Vec<(usize, ImageDesc)> = self
             .resizable_images
             .iter()
-            .map(|(idx, f)| (*idx, f(new_extent)))
+            .map(|(idx, tpl)| {
+                let mut desc = tpl.desc.clone();
+                desc.extent.width = new_extent.width;
+                desc.extent.height = new_extent.height;
+                (*idx, desc)
+            })
             .collect();
 
         let mut any_recreated = false;
