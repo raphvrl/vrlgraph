@@ -185,7 +185,10 @@ impl Cmd {
     }
 
     pub fn set_primitive_topology(&self, topology: Topology) {
-        unsafe { self.device.cmd_set_primitive_topology(self.raw, topology.into()) };
+        unsafe {
+            self.device
+                .cmd_set_primitive_topology(self.raw, topology.into())
+        };
     }
 
     pub fn set_depth_test_enable(&self, enable: bool) {
@@ -221,10 +224,7 @@ impl Cmd {
     pub fn set_color_write_mask(&self, first: u32, masks: &[ColorWriteMask]) {
         let raw: SmallVec<[vk::ColorComponentFlags; 4]> =
             masks.iter().map(|m| (*m).into()).collect();
-        unsafe {
-            self.ext_ds3
-                .cmd_set_color_write_mask(self.raw, first, &raw)
-        };
+        unsafe { self.ext_ds3.cmd_set_color_write_mask(self.raw, first, &raw) };
     }
 
     pub fn set_rasterizer_discard_enable(&self, enable: bool) {

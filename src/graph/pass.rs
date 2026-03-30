@@ -171,8 +171,13 @@ impl WriteParam for WithLayer {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLayer(image, access, layer) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes
-            .push(make_write_access(image, access, LoadOp::Auto, Some(layer), None));
+        ctx.writes.push(make_write_access(
+            image,
+            access,
+            LoadOp::Auto,
+            Some(layer),
+            None,
+        ));
     }
 }
 
@@ -209,8 +214,13 @@ impl WriteParam for WithClearColor {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithClearColor(image, access, color) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes
-            .push(make_write_access(image, access, LoadOp::Clear, None, Some(color)));
+        ctx.writes.push(make_write_access(
+            image,
+            access,
+            LoadOp::Clear,
+            None,
+            Some(color),
+        ));
     }
 }
 
@@ -218,8 +228,13 @@ impl WriteParam for WithLayerClearColor {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let WithLayerClearColor(image, access, color, layer) = self;
         ctx.images[image.0 as usize].usage |= access.usage_flags();
-        ctx.writes
-            .push(make_write_access(image, access, LoadOp::Clear, Some(layer), Some(color)));
+        ctx.writes.push(make_write_access(
+            image,
+            access,
+            LoadOp::Clear,
+            Some(layer),
+            Some(color),
+        ));
     }
 }
 

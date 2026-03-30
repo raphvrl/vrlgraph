@@ -426,11 +426,7 @@ impl Graph {
     ///
     /// Like [`vertex_buffer`](Graph::vertex_buffer), data is uploaded via a
     /// synchronous staging transfer. `T` is typically `u16` or `u32`.
-    pub fn index_buffer(
-        &mut self,
-        label: &str,
-        data: &[u32],
-    ) -> Result<Buffer, GraphError> {
+    pub fn index_buffer(&mut self, label: &str, data: &[u32]) -> Result<Buffer, GraphError> {
         self.upload_buffer_labeled(
             bytemuck::cast_slice(data),
             vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
