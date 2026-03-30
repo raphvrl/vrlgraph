@@ -331,6 +331,15 @@ impl Graph {
         self.pending_resize = Some((width, height));
     }
 
+    pub fn set_present_mode(&mut self, mode: PresentMode) {
+        let vk_mode = mode.to_vk();
+        if vk_mode != self.present_mode {
+            self.present_mode = vk_mode;
+            let ext = self.device.swapchain().extent();
+            self.pending_resize = Some((ext.width, ext.height));
+        }
+    }
+
     fn apply_resize(&mut self, width: u32, height: u32) -> Result<bool, GraphError> {
         self.device
             .recreate_swapchain((width, height), self.present_mode)
