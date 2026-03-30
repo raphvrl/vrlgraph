@@ -52,13 +52,12 @@ impl State {
             .resizable()
             .build()?;
 
-        let sampler = graph.create_sampler(
-            &vk::SamplerCreateInfo::default()
-                .mag_filter(vk::Filter::NEAREST)
-                .min_filter(vk::Filter::NEAREST)
-                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
-        )?;
+        let sampler = graph
+            .create_sampler()
+            .filter(Filter::NEAREST)
+            .address_mode_u(AddressMode::CLAMP_TO_EDGE)
+            .address_mode_v(AddressMode::CLAMP_TO_EDGE)
+            .build()?;
 
         let cs = graph.shader_module("shaders/fill.comp.spv", "main")?;
         let compute_pipeline = graph.compute_pipeline("fill").shader(cs).build()?;

@@ -19,6 +19,7 @@ mod query;
 #[cfg(debug_assertions)]
 mod reload;
 mod resources;
+mod sampler;
 mod sync;
 mod transient;
 
@@ -57,6 +58,7 @@ pub use pass::{
 };
 pub use pipeline::{ComputePipelineBuilder, PipelineBuilder};
 pub use query::PassTiming;
+pub use sampler::SamplerBuilder;
 
 use image::ResizableTemplate;
 

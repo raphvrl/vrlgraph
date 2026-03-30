@@ -486,16 +486,8 @@ impl Graph {
         self.host_buffer_with_data(label, data, vk::BufferUsageFlags::INDEX_BUFFER)
     }
 
-    pub fn create_sampler(&mut self, info: &vk::SamplerCreateInfo) -> Result<Sampler, GraphError> {
-        let handle = self
-            .resources
-            .create_sampler(self.device.ash_device(), info)?;
-        let raw = self
-            .resources
-            .get_sampler(handle)
-            .expect("sampler just created");
-        let index = self.bindless.write_sampler(raw);
-        Ok(Sampler::new(handle, index))
+    pub fn create_sampler(&mut self) -> super::sampler::SamplerBuilder<'_> {
+        super::sampler::SamplerBuilder::new(self)
     }
 
     pub fn destroy_sampler(&mut self, sampler: Sampler) {

@@ -653,20 +653,16 @@ cmd.insert_debug_label("barrier point", [0.0, 1.0, 0.0, 1.0]);
 
 ## Samplers
 
-Samplers are created from a standard `VkSamplerCreateInfo`. `create_sampler` returns a `Sampler` that bundles the handle (for `destroy_sampler`) with the bindless index to pass to shaders via push constants.
+Samplers use a builder pattern matching the rest of the API. `create_sampler` returns a `SamplerBuilder` — configure it with method chaining and call `.build()` to get the `Sampler`. The sampler bundles the handle (for `destroy_sampler`) with the bindless index to pass to shaders via push constants.
 
 ```rust,ignore
-let sampler = graph.create_sampler(
-    &vk::SamplerCreateInfo::default()
-        .mag_filter(vk::Filter::LINEAR)
-        .min_filter(vk::Filter::LINEAR)
-        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-        .address_mode_u(vk::SamplerAddressMode::REPEAT)
-        .address_mode_v(vk::SamplerAddressMode::REPEAT)
-        .max_lod(vk::LOD_CLAMP_NONE),
-)?;
+let sampler = graph.create_sampler()
+    .filter(Filter::LINEAR)
+    .mipmap_mode(MipmapMode::LINEAR)
+    .address_mode(AddressMode::REPEAT)
+    .build()?;
 
-// sampler.index  -> u32, pass to shaders via push constants (binding 2)
+// sampler.raw()  -> u32, pass to shaders via push constants (binding 2)
 // sampler.handle -> for destroy_sampler
 graph.destroy_sampler(sampler);
 ```

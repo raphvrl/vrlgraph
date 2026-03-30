@@ -242,3 +242,113 @@ impl From<vk::PolygonMode> for PolygonMode {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Filter(pub(crate) vk::Filter);
+
+impl Filter {
+    pub const NEAREST: Self = Self(vk::Filter::NEAREST);
+    pub const LINEAR: Self = Self(vk::Filter::LINEAR);
+}
+
+impl Default for Filter {
+    fn default() -> Self {
+        Self::LINEAR
+    }
+}
+
+impl From<Filter> for vk::Filter {
+    fn from(f: Filter) -> Self {
+        f.0
+    }
+}
+
+impl From<vk::Filter> for Filter {
+    fn from(f: vk::Filter) -> Self {
+        Self(f)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct MipmapMode(pub(crate) vk::SamplerMipmapMode);
+
+impl MipmapMode {
+    pub const NEAREST: Self = Self(vk::SamplerMipmapMode::NEAREST);
+    pub const LINEAR: Self = Self(vk::SamplerMipmapMode::LINEAR);
+}
+
+impl Default for MipmapMode {
+    fn default() -> Self {
+        Self::LINEAR
+    }
+}
+
+impl From<MipmapMode> for vk::SamplerMipmapMode {
+    fn from(m: MipmapMode) -> Self {
+        m.0
+    }
+}
+
+impl From<vk::SamplerMipmapMode> for MipmapMode {
+    fn from(m: vk::SamplerMipmapMode) -> Self {
+        Self(m)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct AddressMode(pub(crate) vk::SamplerAddressMode);
+
+impl AddressMode {
+    pub const REPEAT: Self = Self(vk::SamplerAddressMode::REPEAT);
+    pub const MIRRORED_REPEAT: Self = Self(vk::SamplerAddressMode::MIRRORED_REPEAT);
+    pub const CLAMP_TO_EDGE: Self = Self(vk::SamplerAddressMode::CLAMP_TO_EDGE);
+    pub const CLAMP_TO_BORDER: Self = Self(vk::SamplerAddressMode::CLAMP_TO_BORDER);
+}
+
+impl Default for AddressMode {
+    fn default() -> Self {
+        Self::REPEAT
+    }
+}
+
+impl From<AddressMode> for vk::SamplerAddressMode {
+    fn from(a: AddressMode) -> Self {
+        a.0
+    }
+}
+
+impl From<vk::SamplerAddressMode> for AddressMode {
+    fn from(a: vk::SamplerAddressMode) -> Self {
+        Self(a)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct BorderColor(pub(crate) vk::BorderColor);
+
+impl BorderColor {
+    pub const FLOAT_TRANSPARENT_BLACK: Self = Self(vk::BorderColor::FLOAT_TRANSPARENT_BLACK);
+    pub const INT_TRANSPARENT_BLACK: Self = Self(vk::BorderColor::INT_TRANSPARENT_BLACK);
+    pub const FLOAT_OPAQUE_BLACK: Self = Self(vk::BorderColor::FLOAT_OPAQUE_BLACK);
+    pub const INT_OPAQUE_BLACK: Self = Self(vk::BorderColor::INT_OPAQUE_BLACK);
+    pub const FLOAT_OPAQUE_WHITE: Self = Self(vk::BorderColor::FLOAT_OPAQUE_WHITE);
+    pub const INT_OPAQUE_WHITE: Self = Self(vk::BorderColor::INT_OPAQUE_WHITE);
+}
+
+impl Default for BorderColor {
+    fn default() -> Self {
+        Self::FLOAT_TRANSPARENT_BLACK
+    }
+}
+
+impl From<BorderColor> for vk::BorderColor {
+    fn from(b: BorderColor) -> Self {
+        b.0
+    }
+}
+
+impl From<vk::BorderColor> for BorderColor {
+    fn from(b: vk::BorderColor) -> Self {
+        Self(b)
+    }
+}
