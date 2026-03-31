@@ -3,13 +3,15 @@
 pub mod device;
 pub mod graph;
 pub mod resource;
+pub mod shader;
 pub mod types;
 pub mod vertex;
 
 pub use ash;
 
+pub use shader::ShaderType;
 pub use vertex::{VertexAttribute, VertexInput};
-pub use vrlgraph_derive::VertexInput;
+pub use vrlgraph_derive::{ShaderType, VertexInput};
 
 pub mod prelude {
 
@@ -23,5 +25,5 @@ pub mod prelude {
 
     pub use crate::types::*;
 
-    pub use vrlgraph_derive::VertexInput;
+    pub use vrlgraph_derive::{ShaderType, VertexInput};
 }

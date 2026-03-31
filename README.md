@@ -620,18 +620,49 @@ Push constants are the sole mechanism to pass bindless indices, BDA pointers, an
 Pass any `Pod` value directly — no manual byte conversion needed:
 
 ```rust,ignore
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct DrawPush {
-    sampled_idx: u32,
-    sampler_idx: u32,
-    _pad: [u32; 2],
-}
-
-cmd.push_constants(&DrawPush { sampled_idx: res.sampled_index(my_image).0, sampler_idx, _pad: [0; 2] });
+cmd.push_constants(&my_pod_value);
 ```
 
 For dynamic payloads assembled at runtime (e.g. a `Vec<u8>` slice), use `push_constants_raw(&[u8])`.
+
+For structs that need GPU-layout padding, use `push_shader` with a `ShaderType` value (see below).
+
+### Shader types
+
+`#[derive(ShaderType)]` generates `Clone`, `Copy`, and a `write_padded` method that serializes the struct to GPU-compatible bytes with the correct padding for std140 (default) or std430. The struct itself is not modified — padding is applied at serialization time.
+
+```rust,ignore
+// std140 (default — suitable for uniform buffers)
+#[derive(ShaderType)]
+struct Camera {
+    view: [[f32; 4]; 4],
+    proj: [[f32; 4]; 4],
+    position: [f32; 3],
+}
+
+let cam = Camera { view, proj, position: [0.0, 1.0, 0.0] };
+cmd.push_shader(&cam);
+
+// std430 (suitable for storage buffers)
+#[derive(ShaderType)]
+#[shader_type(std430)]
+struct Particle {
+    position: [f32; 3],
+    velocity: [f32; 3],
+}
+```
+
+Dedicated API methods handle serialization transparently:
+
+```rust,ignore
+graph.uniform_shader("camera", &cam)?;       // allocate + write padded
+graph.write_shader(buf, &cam);               // update existing buffer
+cmd.push_shader(&cam);                       // push constants with padding
+```
+
+**Supported types:** `f32`, `u32`, `i32`, `u64`, `[f32; 2..4]`, `[u32; 2..4]`, `[i32; 2..4]`, `[[f32; 4]; 4]` (mat4), `[[f32; 4]; 3]` (mat3). With the `glam` feature: `Vec2`, `Vec3`, `Vec3A`, `Vec4`, `UVec2`–`UVec4`, `IVec2`–`IVec4`, `Mat3`, `Mat4`.
+
+For unsupported types, use the `#[align(N)]` attribute on the field to specify alignment manually.
 
 ### Draw and dispatch commands
 

@@ -3,22 +3,17 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
-use bytemuck::{Pod, Zeroable};
-
 use vrlgraph::ash::vk;
 use vrlgraph::prelude::*;
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(ShaderType)]
 struct FillParams {
     width: u32,
     height: u32,
     storage_idx: u32,
-    _pad: u32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(ShaderType)]
 struct BlitParams {
     sampled_idx: u32,
     sampler_idx: u32,
@@ -98,14 +93,11 @@ impl State {
             .execute(move |cmd, res| {
                 cmd.bind_compute_pipeline(res.pipeline(compute_pipe));
 
-                let params = FillParams {
+                cmd.push_shader(&FillParams {
                     width,
                     height,
                     storage_idx: res.storage_index(storage_image),
-                    _pad: 0,
-                };
-
-                cmd.push_constants(&params);
+                });
 
                 cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
             });
@@ -119,12 +111,10 @@ impl State {
 
                 cmd.set_viewport_scissor(frame.extent);
 
-                let params = BlitParams {
+                cmd.push_shader(&BlitParams {
                     sampled_idx: res.sampled_index(storage_image),
                     sampler_idx: res.sampler_index(sampler),
-                };
-
-                cmd.push_constants(&params);
+                });
                 cmd.draw(3, 1);
             });
 

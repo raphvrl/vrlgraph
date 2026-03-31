@@ -284,6 +284,16 @@ impl Cmd {
         self.push_constants_raw(bytemuck::bytes_of(data));
     }
 
+    /// Writes a [`ShaderType`](crate::ShaderType) value as push constant data
+    /// with automatic padding.
+    ///
+    /// A pipeline must be bound first.
+    pub fn push_shader<T: crate::ShaderType>(&self, data: &T) {
+        let mut buf = vec![0u8; T::PADDED_SIZE];
+        data.write_padded(&mut buf);
+        self.push_constants_raw(&buf);
+    }
+
     /// Writes raw bytes as push constant data.
     ///
     /// Prefer [`push_constants`](Cmd::push_constants) for typed values.

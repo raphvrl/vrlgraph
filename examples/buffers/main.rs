@@ -15,15 +15,13 @@ struct Vertex {
     pos: [f32; 2],
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(ShaderType)]
 struct Transform {
     angle: f32,
     scale: f32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(ShaderType)]
 struct PC {
     transform_addr: u64,
     colors_addr: u64,
@@ -76,7 +74,7 @@ impl State {
             scale: 0.8,
         };
 
-        let transform_buf = graph.uniform_buffer("transform", &[transform])?;
+        let transform_buf = graph.uniform_shader("transform", &transform)?;
 
         let colors_buf = graph.storage_buffer("colors", &COLORS)?;
 
@@ -107,10 +105,8 @@ impl State {
 
         let angle = self.start.elapsed().as_secs_f32();
 
-        self.graph.write_buffer(
-            self.transform_buf,
-            std::slice::from_ref(&Transform { angle, scale: 0.8 }),
-        );
+        self.graph
+            .write_shader(self.transform_buf, &Transform { angle, scale: 0.8 });
 
         let frame = self.graph.begin_frame()?;
 
@@ -135,7 +131,7 @@ impl State {
                 cmd.bind_vertex_buffer(res.buffer(vertex_buf), 0);
                 cmd.bind_index_buffer(res.buffer(index_buf), 0);
 
-                cmd.push_constants(&PC {
+                cmd.push_shader(&PC {
                     transform_addr,
                     colors_addr,
                 });

@@ -1,3 +1,5 @@
+mod shader;
+
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -130,4 +132,78 @@ fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
         }
     }
     Ok(None)
+}
+
+/// Derives [`ShaderType`] for a struct, generating `Clone`, `Copy`, and a
+/// [`write_padded`](ShaderType::write_padded) implementation that serializes
+/// the struct to GPU-compatible padded bytes.
+///
+/// The struct itself is **not modified** — no hidden padding fields are
+/// inserted. Instead, padding is applied at serialization time when calling
+/// methods like [`Cmd::push_shader`] or [`Graph::write_shader`].
+///
+/// # Layout selection
+///
+/// - `#[derive(ShaderType)]` — std140 (default, suitable for uniform buffers)
+/// - `#[shader_type(std430)]` on the struct — std430 (suitable for storage
+///   buffers)
+///
+/// # Supported field types
+///
+/// **Scalars:** `f32`, `u32`, `i32`, `u64`
+///
+/// **Vectors (as arrays):** `[f32; 2]`, `[f32; 3]`, `[f32; 4]` (same for
+/// `u32`/`i32`)
+///
+/// **Matrices:** `[[f32; 4]; 4]` (mat4), `[[f32; 4]; 3]` (mat3)
+///
+/// **glam types** (with the `glam` feature): `Vec2`, `Vec3`, `Vec3A`, `Vec4`,
+/// `UVec2`–`UVec4`, `IVec2`–`IVec4`, `Mat3`, `Mat4`
+///
+/// For unsupported types, annotate the field with `#[align(N)]` where `N` is
+/// the required alignment (must be a power of two).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use vrlgraph::ShaderType;
+///
+/// #[derive(ShaderType)]
+/// struct Camera {
+///     view: [[f32; 4]; 4],
+///     proj: [[f32; 4]; 4],
+///     position: [f32; 3],
+/// }
+///
+/// let cam = Camera { view, proj, position: [0.0, 1.0, 0.0] };
+/// cmd.push_shader(&cam);
+/// ```
+#[proc_macro_derive(ShaderType, attributes(shader_type, align))]
+pub fn derive_shader_type(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    let layout = parse_shader_type_layout(&input.attrs)
+        .unwrap_or(shader::Layout::Std140);
+
+    shader::impl_shader_type(input, layout)
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
+}
+
+fn parse_shader_type_layout(attrs: &[syn::Attribute]) -> Option<shader::Layout> {
+    for attr in attrs {
+        if attr.path().is_ident("shader_type") {
+            let mut layout = None;
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("std140") {
+                    layout = Some(shader::Layout::Std140);
+                } else if meta.path.is_ident("std430") {
+                    layout = Some(shader::Layout::Std430);
+                }
+                Ok(())
+            });
+            return layout;
+        }
+    }
+    None
 }
