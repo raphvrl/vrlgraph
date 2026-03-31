@@ -335,6 +335,15 @@ impl Graph {
             .write(data);
     }
 
+    /// Writes a single [`ShaderType`](crate::ShaderType) value into a buffer
+    /// with automatic GPU-layout padding.
+    pub fn write_shader<T: crate::ShaderType>(&self, handle: Buffer, value: &T) {
+        self.resources
+            .get_buffer(handle.0)
+            .expect("write_shader: invalid buffer handle")
+            .write_shader(value);
+    }
+
     // ── Convenience buffer methods ───────────────────────────────────
 
     fn host_buffer(
@@ -349,6 +358,17 @@ impl Graph {
             location: MemoryLocation::CpuToGpu,
             label: label.to_string(),
         })?)
+    }
+
+    fn host_buffer_with_shader<T: crate::ShaderType>(
+        &mut self,
+        label: &str,
+        value: &T,
+        usage: vk::BufferUsageFlags,
+    ) -> Result<Buffer, GraphError> {
+        let buf = self.host_buffer(label, T::PADDED_SIZE as vk::DeviceSize, usage)?;
+        self.write_shader(buf, value);
+        Ok(buf)
     }
 
     fn host_buffer_with_data<T: bytemuck::Pod>(
@@ -374,6 +394,16 @@ impl Graph {
         self.host_buffer_with_data(label, data, vk::BufferUsageFlags::STORAGE_BUFFER)
     }
 
+    /// Allocates a `STORAGE_BUFFER` pre-filled with a [`ShaderType`](crate::ShaderType)
+    /// value (with automatic padding) in `CpuToGpu` memory.
+    pub fn storage_shader<T: crate::ShaderType>(
+        &mut self,
+        label: &str,
+        value: &T,
+    ) -> Result<Buffer, GraphError> {
+        self.host_buffer_with_shader(label, value, vk::BufferUsageFlags::STORAGE_BUFFER)
+    }
+
     /// Allocates an uninitialised `STORAGE_BUFFER` of `size` bytes in `CpuToGpu` memory.
     ///
     /// Use [`Graph::write_buffer`] to fill it from the CPU before first use.
@@ -395,6 +425,18 @@ impl Graph {
         data: &[T],
     ) -> Result<Buffer, GraphError> {
         self.host_buffer_with_data(label, data, vk::BufferUsageFlags::UNIFORM_BUFFER)
+    }
+
+    /// Allocates a `UNIFORM_BUFFER` pre-filled with a [`ShaderType`](crate::ShaderType)
+    /// value (with automatic padding) in `CpuToGpu` memory.
+    ///
+    /// Update it each frame with [`Graph::write_shader`].
+    pub fn uniform_shader<T: crate::ShaderType>(
+        &mut self,
+        label: &str,
+        value: &T,
+    ) -> Result<Buffer, GraphError> {
+        self.host_buffer_with_shader(label, value, vk::BufferUsageFlags::UNIFORM_BUFFER)
     }
 
     /// Allocates an uninitialised `UNIFORM_BUFFER` of `size` bytes in `CpuToGpu` memory.

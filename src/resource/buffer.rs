@@ -135,4 +135,36 @@ impl GpuBuffer {
     pub fn write_one<T: bytemuck::Pod>(&self, value: &T) {
         self.write(std::slice::from_ref(value));
     }
+
+    /// Writes raw bytes into the buffer via the CPU-mapped pointer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is not host-visible or if `bytes` is larger than
+    /// the allocated size.
+    pub fn write_bytes(&self, bytes: &[u8]) {
+        assert!(
+            bytes.len() <= self.size as usize,
+            "GpuBuffer::write_bytes: data ({} B) exceeds buffer size ({} B)",
+            bytes.len(),
+            self.size,
+        );
+        let ptr = self
+            .mapped_ptr()
+            .expect("GpuBuffer::write_bytes: buffer is not host-visible");
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
+    }
+
+    /// Writes a [`ShaderType`](crate::ShaderType) value with automatic padding.
+    pub fn write_shader<T: crate::ShaderType>(&self, value: &T) {
+        if T::PADDED_SIZE <= 256 {
+            let mut buf = [0u8; 256];
+            value.write_padded(&mut buf[..T::PADDED_SIZE]);
+            self.write_bytes(&buf[..T::PADDED_SIZE]);
+        } else {
+            let mut buf = vec![0u8; T::PADDED_SIZE];
+            value.write_padded(&mut buf);
+            self.write_bytes(&buf);
+        }
+    }
 }

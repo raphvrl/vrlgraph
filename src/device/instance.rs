@@ -1,5 +1,7 @@
+use std::ffi::{CStr, CString, c_char};
+
 use ash::{ext::debug_utils, vk};
-use std::ffi::{CStr, CString};
+use raw_window_handle::RawDisplayHandle;
 use thiserror::Error;
 use tracing::{error, info, warn};
 
@@ -25,7 +27,7 @@ struct DebugUtils {
 }
 
 impl Instance {
-    pub fn new(validation: bool) -> Result<Self, InstanceError> {
+    pub fn new(validation: bool, display_handle: RawDisplayHandle) -> Result<Self, InstanceError> {
         let entry = unsafe { ash::Entry::load()? };
 
         if validation {
@@ -41,13 +43,12 @@ impl Instance {
             vec![]
         };
 
-        let extensions = Self::required_extensions(validation);
-        let extension_ptrs: Vec<*const i8> = extensions.iter().map(|s| s.as_ptr()).collect();
+        let extensions = Self::required_extensions(display_handle, validation)?;
 
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_layer_names(&layer_ptrs)
-            .enabled_extension_names(&extension_ptrs);
+            .enabled_extension_names(&extensions);
 
         let inner = unsafe { entry.create_instance(&create_info, None)? };
 
@@ -78,22 +79,17 @@ impl Instance {
         vec![CString::new("VK_LAYER_KHRONOS_validation").unwrap()]
     }
 
-    fn required_extensions(debug: bool) -> Vec<CString> {
-        let mut exts = vec![
-            CString::new("VK_KHR_surface").unwrap(),
-            #[cfg(target_os = "windows")]
-            CString::new("VK_KHR_win32_surface").unwrap(),
-            #[cfg(target_os = "linux")]
-            CString::new("VK_KHR_xcb_surface").unwrap(),
-            #[cfg(target_os = "macos")]
-            CString::new("VK_EXT_metal_surface").unwrap(),
-        ];
-
+    fn required_extensions(
+        display_handle: RawDisplayHandle,
+        debug: bool,
+    ) -> Result<Vec<*const c_char>, InstanceError> {
+        let mut exts = ash_window::enumerate_required_extensions(display_handle)
+            .map_err(InstanceError::Vulkan)?
+            .to_vec();
         if debug {
-            exts.push(CString::new("VK_EXT_debug_utils").unwrap());
+            exts.push(ash::ext::debug_utils::NAME.as_ptr());
         }
-
-        exts
+        Ok(exts)
     }
 
     fn check_layer_support(entry: &ash::Entry, layers: Vec<CString>) -> Result<(), InstanceError> {

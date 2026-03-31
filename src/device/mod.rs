@@ -80,7 +80,7 @@ impl GpuDevice {
         prefer_integrated: bool,
         prefer_srgb: bool,
     ) -> Result<Self, DeviceError> {
-        let instance = Instance::new(validation)?;
+        let instance = Instance::new(validation, display_handle)?;
 
         let surface = Surface::new(
             instance.entry(),

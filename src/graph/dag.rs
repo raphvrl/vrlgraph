@@ -1,8 +1,7 @@
-use std::collections::{HashMap, HashSet};
-
 use petgraph::algo::toposort;
 use petgraph::graph::DiGraph;
 use petgraph::visit::{Bfs, Reversed};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::pass::RecordedPass;
 use crate::resource::BufferHandle;
@@ -14,7 +13,7 @@ pub(super) struct CycleError {
 
 pub(super) fn sort_and_cull_passes(
     passes: Vec<RecordedPass>,
-    live_images: &HashSet<u32>,
+    live_images: &FxHashSet<u32>,
 ) -> Result<Vec<RecordedPass>, CycleError> {
     if passes.is_empty() {
         return Ok(passes);
@@ -22,8 +21,8 @@ pub(super) fn sort_and_cull_passes(
 
     let n = passes.len();
 
-    let mut image_writers: HashMap<u32, Vec<usize>> = HashMap::new();
-    let mut buffer_writers: HashMap<BufferHandle, Vec<usize>> = HashMap::new();
+    let mut image_writers: FxHashMap<u32, Vec<usize>> = FxHashMap::default();
+    let mut buffer_writers: FxHashMap<BufferHandle, Vec<usize>> = FxHashMap::default();
 
     for (i, pass) in passes.iter().enumerate() {
         for w in &pass.writes {
@@ -96,9 +95,8 @@ pub(super) fn sort_and_cull_passes(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use ash::vk;
+    use rustc_hash::FxHashSet;
 
     use super::*;
     use crate::graph::access::LoadOp;
@@ -134,7 +132,7 @@ mod tests {
     #[test]
     fn empty_input_returns_empty() {
         assert!(
-            sort_and_cull_passes(vec![], &HashSet::new())
+            sort_and_cull_passes(vec![], &FxHashSet::default())
                 .expect("test invariant")
                 .is_empty()
         );
@@ -142,16 +140,20 @@ mod tests {
 
     #[test]
     fn live_pass_is_kept() {
-        let result = sort_and_cull_passes(vec![make_pass("a", &[0], &[])], &HashSet::from([0u32]))
-            .expect("test invariant");
+        let result = sort_and_cull_passes(
+            vec![make_pass("a", &[0], &[])],
+            &FxHashSet::from_iter([0u32]),
+        )
+        .expect("test invariant");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "a");
     }
 
     #[test]
     fn dead_pass_is_culled() {
-        let result = sort_and_cull_passes(vec![make_pass("dead", &[0], &[])], &HashSet::new())
-            .expect("test invariant");
+        let result =
+            sort_and_cull_passes(vec![make_pass("dead", &[0], &[])], &FxHashSet::default())
+                .expect("test invariant");
         assert!(result.is_empty());
     }
 
@@ -159,7 +161,7 @@ mod tests {
     fn dependency_order_is_respected() {
         let producer = make_pass("producer", &[0], &[]);
         let consumer = make_pass("consumer", &[1], &[0]);
-        let result = sort_and_cull_passes(vec![consumer, producer], &HashSet::from([1u32]))
+        let result = sort_and_cull_passes(vec![consumer, producer], &FxHashSet::from_iter([1u32]))
             .expect("no cycle in test");
         assert_eq!(result[0].name, "producer");
         assert_eq!(result[1].name, "consumer");

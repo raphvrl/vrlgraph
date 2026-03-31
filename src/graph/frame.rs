@@ -113,15 +113,7 @@ impl Graph {
     }
 
     pub fn compute_pass(&mut self, name: &'static str) -> PassSetup<'_> {
-        PassSetup {
-            graph: self,
-            name,
-            reads: Vec::new(),
-            writes: Vec::new(),
-            buffer_reads: Vec::new(),
-            buffer_writes: Vec::new(),
-            view_mask: 0,
-        }
+        self.render_pass(name)
     }
 
     pub fn begin_frame(&mut self) -> Result<Frame, GraphError> {
@@ -134,33 +126,35 @@ impl Graph {
         let idx = self.current;
         self.sync.wait(idx)?;
 
-        self.last_timings.clear();
-        if !self.timestamp_pools.is_empty() && self.timestamp_written[idx] {
-            let n = self.timestamp_names[idx].len() as u32;
+        self.timestamps.last_timings.clear();
+        if self.timestamps.is_enabled() && self.timestamps.written[idx] {
+            let n = self.timestamps.names[idx].len() as u32;
             if n > 0 {
                 let mut results = vec![0u64; (n * 2) as usize];
                 let ok = unsafe {
                     self.device.ash_device().get_query_pool_results(
-                        self.timestamp_pools[idx].raw(),
+                        self.timestamps.pools[idx].raw(),
                         0,
                         &mut results,
                         vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::WAIT,
                     )
                 };
                 if ok.is_ok() {
-                    let period = self.timestamp_period;
-                    for (i, &name) in self.timestamp_names[idx].iter().enumerate() {
+                    let period = self.timestamps.period;
+                    for (i, &name) in self.timestamps.names[idx].iter().enumerate() {
                         let begin = results[i * 2];
                         let end = results[i * 2 + 1];
                         if end >= begin {
                             let gpu_ns = ((end - begin) as f64 * period) as u64;
-                            self.last_timings.push(PassTiming { name, gpu_ns });
+                            self.timestamps
+                                .last_timings
+                                .push(PassTiming { name, gpu_ns });
                             tracing::debug!(gpu_ns, pass = name, "gpu_pass_timing");
                         }
                     }
                 }
             }
-            self.timestamp_written[idx] = false;
+            self.timestamps.written[idx] = false;
         }
 
         let image_index = match self
@@ -267,10 +261,10 @@ impl Graph {
 
         cmd.bind_global_set(self.bindless.pipeline_layout(), self.bindless.set());
 
-        if !self.timestamp_pools.is_empty() {
-            let pool = self.timestamp_pools[self.frame_index].raw();
+        if self.timestamps.is_enabled() {
+            let pool = self.timestamps.pools[self.frame_index].raw();
             cmd.reset_query_pool(pool, 0, MAX_TIMESTAMP_PASSES * 2);
-            self.timestamp_names[self.frame_index].clear();
+            self.timestamps.names[self.frame_index].clear();
         }
 
         for pass in passes {
@@ -278,11 +272,11 @@ impl Graph {
 
             cmd.begin_debug_group(pass.name, [0.2, 0.6, 1.0, 1.0]);
 
-            let pass_slot = self.timestamp_names[self.frame_index].len() as u32;
-            let has_ts = !self.timestamp_pools.is_empty() && pass_slot < MAX_TIMESTAMP_PASSES;
+            let pass_slot = self.timestamps.names[self.frame_index].len() as u32;
+            let has_ts = self.timestamps.is_enabled() && pass_slot < MAX_TIMESTAMP_PASSES;
 
             if has_ts {
-                let pool = self.timestamp_pools[self.frame_index].raw();
+                let pool = self.timestamps.pools[self.frame_index].raw();
                 cmd.write_timestamp(vk::PipelineStageFlags2::TOP_OF_PIPE, pool, pass_slot * 2);
             }
 
@@ -448,6 +442,7 @@ impl Graph {
                 }
             }
 
+            cmd.reset_dynamic_state();
             let frame_res = FrameResources::new(&self.images, &self.resources, self.frame_index);
             (pass.execute)(&mut cmd, &frame_res);
 
@@ -456,20 +451,20 @@ impl Graph {
             }
 
             if has_ts {
-                let pool = self.timestamp_pools[self.frame_index].raw();
+                let pool = self.timestamps.pools[self.frame_index].raw();
                 cmd.write_timestamp(
                     vk::PipelineStageFlags2::BOTTOM_OF_PIPE,
                     pool,
                     pass_slot * 2 + 1,
                 );
-                self.timestamp_names[self.frame_index].push(pass.name);
+                self.timestamps.names[self.frame_index].push(pass.name);
             }
 
             cmd.end_debug_group();
         }
 
-        if !self.timestamp_pools.is_empty() && !self.timestamp_names[self.frame_index].is_empty() {
-            self.timestamp_written[self.frame_index] = true;
+        if self.timestamps.is_enabled() && !self.timestamps.names[self.frame_index].is_empty() {
+            self.timestamps.written[self.frame_index] = true;
         }
 
         if let Some(sc_h) = self.sc_graph_image {

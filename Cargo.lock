@@ -504,6 +504,9 @@ name = "glam"
 version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "gpu-allocator"
@@ -1298,6 +1301,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustc-hash"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1703,7 +1712,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrlgraph"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ash",
  "ash-window",
@@ -1714,6 +1723,7 @@ dependencies = [
  "notify",
  "petgraph",
  "raw-window-handle",
+ "rustc-hash",
  "slotmap",
  "smallvec",
  "thiserror 2.0.18",

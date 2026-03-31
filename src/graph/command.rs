@@ -105,8 +105,9 @@ impl Cmd {
         unsafe { self.device.cmd_end_rendering(self.raw) };
     }
 
-    /// Binds a graphics pipeline and resets all dynamic rasterizer state to
-    /// defaults. Always call this before issuing draw commands.
+    /// Binds a graphics pipeline. Dynamic rasterizer state is **not** reset;
+    /// values persist across binds (OpenGL-like model). Call
+    /// [`reset_dynamic_state`](Cmd::reset_dynamic_state) to restore defaults.
     pub fn bind_graphics_pipeline(&mut self, pipe: &GpuPipeline) {
         unsafe {
             self.device
@@ -114,7 +115,21 @@ impl Cmd {
         };
         self.bound_layout = Some(pipe.layout);
         self.bound_bind_point = vk::PipelineBindPoint::GRAPHICS;
+    }
 
+    /// Resets all dynamic rasterizer state to defaults. Called once at the
+    /// beginning of each pass. Defaults:
+    /// - Rasterizer discard: off
+    /// - Depth bias: off
+    /// - Primitive restart: off
+    /// - Cull mode: none
+    /// - Front face: counter-clockwise
+    /// - Topology: triangle list
+    /// - Depth test/write: off
+    /// - Depth compare: less-or-equal
+    /// - Polygon mode: fill
+    /// - Blending: disabled (RGBA write mask, 1 attachment)
+    pub fn reset_dynamic_state(&self) {
         self.set_rasterizer_discard_enable(false);
         self.set_depth_bias_enable(false);
         self.set_primitive_restart_enable(false);
@@ -267,6 +282,16 @@ impl Cmd {
     /// The shared pipeline layout uses a single `ALL_STAGES` range.
     pub fn push_constants<T: bytemuck::Pod>(&self, data: &T) {
         self.push_constants_raw(bytemuck::bytes_of(data));
+    }
+
+    /// Writes a [`ShaderType`](crate::ShaderType) value as push constant data
+    /// with automatic padding.
+    ///
+    /// A pipeline must be bound first.
+    pub fn push_shader<T: crate::ShaderType>(&self, data: &T) {
+        let mut buf = [0u8; 256];
+        data.write_padded(&mut buf[..T::PADDED_SIZE]);
+        self.push_constants_raw(&buf[..T::PADDED_SIZE]);
     }
 
     /// Writes raw bytes as push constant data.

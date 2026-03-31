@@ -1,24 +1,18 @@
-use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::window::{Window, WindowId};
-
-use bytemuck::{Pod, Zeroable};
+#[path = "../common/mod.rs"]
+mod common;
 
 use vrlgraph::ash::vk;
 use vrlgraph::prelude::*;
+use winit::window::Window;
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(ShaderType)]
 struct FillParams {
     width: u32,
     height: u32,
     storage_idx: u32,
-    _pad: u32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(ShaderType)]
 struct BlitParams {
     sampled_idx: u32,
     sampler_idx: u32,
@@ -33,8 +27,8 @@ struct State {
     sampler: Sampler,
 }
 
-impl State {
-    fn new(window: Window) -> Result<Self, GraphError> {
+impl common::Example for State {
+    fn init(window: Window) -> Result<Self, GraphError> {
         let size = window.inner_size();
 
         let mut graph = Graph::builder()
@@ -98,14 +92,11 @@ impl State {
             .execute(move |cmd, res| {
                 cmd.bind_compute_pipeline(res.pipeline(compute_pipe));
 
-                let params = FillParams {
+                cmd.push_shader(&FillParams {
                     width,
                     height,
                     storage_idx: res.storage_index(storage_image),
-                    _pad: 0,
-                };
-
-                cmd.push_constants(&params);
+                });
 
                 cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
             });
@@ -119,12 +110,10 @@ impl State {
 
                 cmd.set_viewport_scissor(frame.extent);
 
-                let params = BlitParams {
+                cmd.push_shader(&BlitParams {
                     sampled_idx: res.sampled_index(storage_image),
                     sampler_idx: res.sampler_index(sampler),
-                };
-
-                cmd.push_constants(&params);
+                });
                 cmd.draw(3, 1);
             });
 
@@ -135,65 +124,12 @@ impl State {
     fn resize(&mut self, width: u32, height: u32) {
         self.graph.resize(width, height);
     }
-}
 
-struct App {
-    state: Option<State>,
-}
-
-impl App {
-    fn new() -> Self {
-        Self { state: None }
-    }
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
-            .create_window(Window::default_attributes())
-            .unwrap();
-
-        match State::new(window) {
-            Ok(state) => self.state = Some(state),
-            Err(e) => {
-                tracing::error!("init error: {e}");
-                event_loop.exit();
-            }
-        }
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        let Some(state) = &mut self.state else { return };
-
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => {
-                state.resize(size.width, size.height);
-            }
-            WindowEvent::RedrawRequested => match state.draw() {
-                Ok(()) => {}
-                Err(GraphError::SwapchainOutOfDate) => {
-                    let size = state.window.inner_size();
-                    state.resize(size.width, size.height);
-                }
-                Err(e) => {
-                    tracing::error!("draw error: {e}");
-                    event_loop.exit();
-                }
-            },
-            _ => {}
-        }
+    fn window(&self) -> &Window {
+        &self.window
     }
 }
 
 fn main() {
-    tracing_subscriber::fmt::init();
-    let event_loop = EventLoop::new().unwrap();
-    let mut app = App::new();
-    event_loop.run_app(&mut app).unwrap();
+    common::run::<State>();
 }

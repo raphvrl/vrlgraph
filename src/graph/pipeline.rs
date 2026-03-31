@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::path::{Path, PathBuf};
 
 use ash::vk;
@@ -9,6 +9,128 @@ use crate::vertex::VertexInput;
 #[cfg(debug_assertions)]
 use super::reload::{PipelineDesc, PipelineKind};
 use super::{Graph, GraphError};
+
+const DYNAMIC_STATES: &[vk::DynamicState] = &[
+    vk::DynamicState::VIEWPORT_WITH_COUNT,
+    vk::DynamicState::SCISSOR_WITH_COUNT,
+    vk::DynamicState::CULL_MODE,
+    vk::DynamicState::FRONT_FACE,
+    vk::DynamicState::PRIMITIVE_TOPOLOGY,
+    vk::DynamicState::DEPTH_TEST_ENABLE,
+    vk::DynamicState::DEPTH_WRITE_ENABLE,
+    vk::DynamicState::DEPTH_COMPARE_OP,
+    vk::DynamicState::RASTERIZER_DISCARD_ENABLE,
+    vk::DynamicState::DEPTH_BIAS_ENABLE,
+    vk::DynamicState::PRIMITIVE_RESTART_ENABLE,
+    vk::DynamicState::POLYGON_MODE_EXT,
+    vk::DynamicState::COLOR_BLEND_ENABLE_EXT,
+    vk::DynamicState::COLOR_BLEND_EQUATION_EXT,
+    vk::DynamicState::COLOR_WRITE_MASK_EXT,
+];
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn create_graphics_pipeline_raw(
+    device: &ash::Device,
+    cache: vk::PipelineCache,
+    layout: vk::PipelineLayout,
+    vert_module: vk::ShaderModule,
+    vert_entry: &CStr,
+    frag_module: vk::ShaderModule,
+    frag_entry: &CStr,
+    color_formats: &[vk::Format],
+    depth_format: Option<vk::Format>,
+    vertex_bindings: &[vk::VertexInputBindingDescription],
+    vertex_attributes: &[vk::VertexInputAttributeDescription],
+) -> Result<GpuPipeline, GraphError> {
+    let stages = [
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vert_module)
+            .name(vert_entry),
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(frag_module)
+            .name(frag_entry),
+    ];
+
+    let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
+        .vertex_binding_descriptions(vertex_bindings)
+        .vertex_attribute_descriptions(vertex_attributes);
+    let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
+        .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
+    let viewport_state = vk::PipelineViewportStateCreateInfo::default();
+    let rasterization = vk::PipelineRasterizationStateCreateInfo::default().line_width(1.0);
+    let multisample = vk::PipelineMultisampleStateCreateInfo::default()
+        .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+    let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::default();
+
+    let blend_attachments: Vec<_> = color_formats
+        .iter()
+        .map(|_| vk::PipelineColorBlendAttachmentState::default())
+        .collect();
+    let color_blend =
+        vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_attachments);
+    let dynamic_state =
+        vk::PipelineDynamicStateCreateInfo::default().dynamic_states(DYNAMIC_STATES);
+
+    let mut rendering_info =
+        vk::PipelineRenderingCreateInfo::default().color_attachment_formats(color_formats);
+    if let Some(depth_fmt) = depth_format {
+        rendering_info = rendering_info.depth_attachment_format(depth_fmt);
+    }
+
+    let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
+        .stages(&stages)
+        .vertex_input_state(&vertex_input)
+        .input_assembly_state(&input_assembly)
+        .viewport_state(&viewport_state)
+        .rasterization_state(&rasterization)
+        .multisample_state(&multisample)
+        .depth_stencil_state(&depth_stencil)
+        .color_blend_state(&color_blend)
+        .dynamic_state(&dynamic_state)
+        .layout(layout)
+        .push_next(&mut rendering_info);
+
+    let raw = unsafe {
+        device
+            .create_graphics_pipelines(cache, &[pipeline_info], None)
+            .map_err(|(_, e)| e)?
+    };
+
+    Ok(GpuPipeline {
+        pipeline: raw[0],
+        layout,
+    })
+}
+
+pub(super) fn create_compute_pipeline_raw(
+    device: &ash::Device,
+    cache: vk::PipelineCache,
+    layout: vk::PipelineLayout,
+    compute_module: vk::ShaderModule,
+    compute_entry: &CStr,
+) -> Result<GpuPipeline, GraphError> {
+    let stage = vk::PipelineShaderStageCreateInfo::default()
+        .stage(vk::ShaderStageFlags::COMPUTE)
+        .module(compute_module)
+        .name(compute_entry);
+
+    let pipeline_info = vk::ComputePipelineCreateInfo::default()
+        .stage(stage)
+        .layout(layout);
+
+    let raw = unsafe {
+        device
+            .create_compute_pipelines(cache, &[pipeline_info], None)
+            .map_err(|(_, e)| e)?
+    };
+
+    Ok(GpuPipeline {
+        pipeline: raw[0],
+        layout,
+    })
+}
 
 /// Builder for a graphics pipeline.
 ///
@@ -106,129 +228,47 @@ impl<'g> PipelineBuilder<'g> {
             .fragment
             .expect("PipelineBuilder: fragment_shader() is required");
 
-        let vert_module = self
+        let vert = self
             .graph
             .resources
             .get_shader_module(vertex.0)
-            .expect("PipelineBuilder: vertex ShaderModule not found in pool")
-            .module;
-        let vert_entry = self
-            .graph
-            .resources
-            .get_shader_module(vertex.0)
-            .expect("PipelineBuilder: vertex ShaderModule not found in pool")
-            .entry
-            .clone();
-        let frag_module = self
+            .expect("PipelineBuilder: vertex ShaderModule not found in pool");
+        let vert_module = vert.module;
+        let vert_entry = vert.entry.clone();
+
+        let frag = self
             .graph
             .resources
             .get_shader_module(fragment.0)
-            .expect("PipelineBuilder: fragment ShaderModule not found in pool")
-            .module;
-        let frag_entry = self
-            .graph
-            .resources
-            .get_shader_module(fragment.0)
-            .expect("PipelineBuilder: fragment ShaderModule not found in pool")
-            .entry
-            .clone();
-
-        let stages = [
-            vk::PipelineShaderStageCreateInfo::default()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(vert_module)
-                .name(vert_entry.as_c_str()),
-            vk::PipelineShaderStageCreateInfo::default()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(frag_module)
-                .name(frag_entry.as_c_str()),
-        ];
-
-        let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
-            .vertex_binding_descriptions(&self.vertex_bindings)
-            .vertex_attribute_descriptions(&self.vertex_attributes);
-
-        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
-            .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
-
-        let viewport_state = vk::PipelineViewportStateCreateInfo::default();
-
-        let rasterization = vk::PipelineRasterizationStateCreateInfo::default().line_width(1.0);
-
-        let multisample = vk::PipelineMultisampleStateCreateInfo::default()
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
-
-        let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::default();
-
-        let blend_attachments: Vec<_> = self
-            .color_formats
-            .iter()
-            .map(|_| vk::PipelineColorBlendAttachmentState::default())
-            .collect();
-
-        let color_blend =
-            vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_attachments);
-
-        let dynamic_states = [
-            vk::DynamicState::VIEWPORT_WITH_COUNT,
-            vk::DynamicState::SCISSOR_WITH_COUNT,
-            vk::DynamicState::CULL_MODE,
-            vk::DynamicState::FRONT_FACE,
-            vk::DynamicState::PRIMITIVE_TOPOLOGY,
-            vk::DynamicState::DEPTH_TEST_ENABLE,
-            vk::DynamicState::DEPTH_WRITE_ENABLE,
-            vk::DynamicState::DEPTH_COMPARE_OP,
-            vk::DynamicState::RASTERIZER_DISCARD_ENABLE,
-            vk::DynamicState::DEPTH_BIAS_ENABLE,
-            vk::DynamicState::PRIMITIVE_RESTART_ENABLE,
-            vk::DynamicState::POLYGON_MODE_EXT,
-            vk::DynamicState::COLOR_BLEND_ENABLE_EXT,
-            vk::DynamicState::COLOR_BLEND_EQUATION_EXT,
-            vk::DynamicState::COLOR_WRITE_MASK_EXT,
-        ];
-        let dynamic_state =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
+            .expect("PipelineBuilder: fragment ShaderModule not found in pool");
+        let frag_module = frag.module;
+        let frag_entry = frag.entry.clone();
 
         let layout = self.graph.bindless.pipeline_layout();
 
-        let mut rendering_info = vk::PipelineRenderingCreateInfo::default()
-            .color_attachment_formats(&self.color_formats);
-        if let Some(depth_fmt) = self.depth_format {
-            rendering_info = rendering_info.depth_attachment_format(depth_fmt);
-        }
-
-        let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
-            .stages(&stages)
-            .vertex_input_state(&vertex_input)
-            .input_assembly_state(&input_assembly)
-            .viewport_state(&viewport_state)
-            .rasterization_state(&rasterization)
-            .multisample_state(&multisample)
-            .depth_stencil_state(&depth_stencil)
-            .color_blend_state(&color_blend)
-            .dynamic_state(&dynamic_state)
-            .layout(layout)
-            .push_next(&mut rendering_info);
-
-        let raw = unsafe {
-            self.graph
-                .ash_device()
-                .create_graphics_pipelines(self.graph.pipeline_cache(), &[pipeline_info], None)
-                .map_err(|(_, e)| e)?
-        };
-
-        let handle = self.graph.insert_pipeline(GpuPipeline {
-            pipeline: raw[0],
+        let gpu_pipeline = create_graphics_pipeline_raw(
+            self.graph.ash_device(),
+            self.graph.pipeline_cache(),
             layout,
-        });
+            vert_module,
+            &vert_entry,
+            frag_module,
+            &frag_entry,
+            &self.color_formats,
+            self.depth_format,
+            &self.vertex_bindings,
+            &self.vertex_attributes,
+        )?;
 
         if let Some(du) = self.graph.device().debug_utils() {
             let name = CString::new(self.label.as_str()).unwrap();
             let info = vk::DebugUtilsObjectNameInfoEXT::default()
-                .object_handle(raw[0])
+                .object_handle(gpu_pipeline.pipeline)
                 .object_name(&name);
             let _ = unsafe { du.set_debug_utils_object_name(&info) };
         }
+
+        let handle = self.graph.insert_pipeline(gpu_pipeline);
 
         #[cfg(debug_assertions)]
         self.graph.register_pipeline_desc(
@@ -279,50 +319,33 @@ impl<'g> ComputePipelineBuilder<'g> {
             .shader
             .expect("ComputePipelineBuilder: shader() is required");
 
-        let compute_module = self
+        let sm = self
             .graph
             .resources
             .get_shader_module(shader.0)
-            .expect("ComputePipelineBuilder: ShaderModule not found in pool")
-            .module;
-        let compute_entry = self
-            .graph
-            .resources
-            .get_shader_module(shader.0)
-            .expect("ComputePipelineBuilder: ShaderModule not found in pool")
-            .entry
-            .clone();
-
-        let stage = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::COMPUTE)
-            .module(compute_module)
-            .name(compute_entry.as_c_str());
+            .expect("ComputePipelineBuilder: ShaderModule not found in pool");
+        let compute_module = sm.module;
+        let compute_entry = sm.entry.clone();
 
         let layout = self.graph.bindless.pipeline_layout();
 
-        let pipeline_info = vk::ComputePipelineCreateInfo::default()
-            .stage(stage)
-            .layout(layout);
-
-        let raw = unsafe {
-            self.graph
-                .ash_device()
-                .create_compute_pipelines(self.graph.pipeline_cache(), &[pipeline_info], None)
-                .map_err(|(_, e)| e)?
-        };
-
-        let handle = self.graph.insert_pipeline(GpuPipeline {
-            pipeline: raw[0],
+        let gpu_pipeline = create_compute_pipeline_raw(
+            self.graph.ash_device(),
+            self.graph.pipeline_cache(),
             layout,
-        });
+            compute_module,
+            &compute_entry,
+        )?;
 
         if let Some(du) = self.graph.device().debug_utils() {
             let name = CString::new(self.label.as_str()).unwrap();
             let info = vk::DebugUtilsObjectNameInfoEXT::default()
-                .object_handle(raw[0])
+                .object_handle(gpu_pipeline.pipeline)
                 .object_name(&name);
             let _ = unsafe { du.set_debug_utils_object_name(&info) };
         }
+
+        let handle = self.graph.insert_pipeline(gpu_pipeline);
 
         #[cfg(debug_assertions)]
         self.graph.register_pipeline_desc(

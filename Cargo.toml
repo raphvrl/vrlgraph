@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "vrlgraph"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 description = "A Vulkan render graph library for Rust, built on ash"
@@ -28,6 +28,7 @@ petgraph = { version = "0.8.3", default-features = false }
 slotmap = "1.1.1"
 smallvec = { version = "1.15.1", features = ["union"] }
 
+rustc-hash = "2.1.2"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 notify = "8.2.0"
@@ -37,12 +38,13 @@ image = { version = "0.25.10", default-features = false, features = [
   "jpeg",
 ] }
 
-glam = { version = "0.32.1", optional = true }
+glam = { version = "0.32.1", optional = true, features = ["bytemuck"] }
 vrlgraph-derive = { path = "derive" }
 
 [dev-dependencies]
 winit = "0.30.13"
 tracing-subscriber = "0.3.23"
+glam = "0.32.1"
 
 [[example]]
 name = "triangle"
@@ -55,3 +57,4 @@ path = "examples/compute/main.rs"
 [[example]]
 name = "buffers"
 path = "examples/buffers/main.rs"
+required-features = ["glam"]

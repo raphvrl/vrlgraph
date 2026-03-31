@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use ash::vk;
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::resource::BufferHandle;
@@ -110,7 +109,7 @@ pub(super) fn compute_barriers(
 pub(super) fn compute_buffer_barriers(
     reads: &[BufferAccess],
     writes: &[BufferAccess],
-    states: &mut HashMap<BufferHandle, BufferBarrierState>,
+    states: &mut FxHashMap<BufferHandle, BufferBarrierState>,
 ) -> Option<SmallVec<[BufferBarrierInfo; 4]>> {
     let mut infos: SmallVec<[BufferBarrierInfo; 4]> = SmallVec::new();
 
@@ -144,9 +143,8 @@ pub(super) fn compute_buffer_barriers(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use ash::vk;
+    use rustc_hash::FxHashMap;
 
     use super::*;
     use crate::graph::access::LoadOp;
@@ -240,7 +238,7 @@ mod tests {
 
     #[test]
     fn buffer_barrier_after_write() {
-        let mut states = HashMap::new();
+        let mut states = FxHashMap::default();
         let buf = BufferHandle::default();
 
         let writes = vec![BufferAccess {
