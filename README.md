@@ -587,7 +587,7 @@ cmd.set_scissor(vk::Rect2D { offset: vk::Offset2D::default(), extent: frame.exte
 
 ### Dynamic rasterizer state
 
-The pipeline uses extended dynamic state. These values can change between draw calls without rebuilding the pipeline.
+The pipeline uses extended dynamic state. Values persist across pipeline binds (OpenGL-like model) and are reset to defaults once at the beginning of each pass via `reset_dynamic_state`. Defaults: no culling, no depth test/write, counter-clockwise winding, triangle list topology, fill mode, blending disabled.
 
 ```rust,ignore
 cmd.set_cull_mode(vk::CullModeFlags::BACK);

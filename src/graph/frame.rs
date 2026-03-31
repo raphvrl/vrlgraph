@@ -448,6 +448,7 @@ impl Graph {
                 }
             }
 
+            cmd.reset_dynamic_state();
             let frame_res = FrameResources::new(&self.images, &self.resources, self.frame_index);
             (pass.execute)(&mut cmd, &frame_res);
 

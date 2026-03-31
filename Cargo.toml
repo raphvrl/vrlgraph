@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "vrlgraph"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 description = "A Vulkan render graph library for Rust, built on ash"
