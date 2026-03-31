@@ -28,6 +28,7 @@ petgraph = { version = "0.8.3", default-features = false }
 slotmap = "1.1.1"
 smallvec = { version = "1.15.1", features = ["union"] }
 
+rustc-hash = "2"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 notify = "8.2.0"

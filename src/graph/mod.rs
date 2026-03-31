@@ -23,8 +23,9 @@ mod sampler;
 mod sync;
 mod transient;
 
-use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use ash::vk;
 use thiserror::Error;
@@ -38,7 +39,7 @@ use barrier::BufferBarrierState;
 use bindless::BindlessDescriptorTable;
 use command::{CommandError, CommandPool};
 use pass::RecordedPass;
-use query::TimestampQueryPool;
+use query::TimestampState;
 #[cfg(debug_assertions)]
 use reload::{PipelineDesc, ShaderWatcher};
 use resources::{free_bindless, update_bindless};
@@ -163,26 +164,22 @@ pub struct Graph {
     pub(crate) images: Vec<ImageEntry>,
     pub(crate) persistent_count: usize,
     pub(crate) resizable_images: Vec<(usize, ResizableTemplate)>,
-    pub(crate) buffer_states: HashMap<BufferHandle, BufferBarrierState>,
+    pub(crate) buffer_states: FxHashMap<BufferHandle, BufferBarrierState>,
     pub(crate) pipeline_cache: vk::PipelineCache,
     pub(crate) pipeline_cache_path: Option<PathBuf>,
     pub(crate) transient_cache: TransientCache,
-    pub(crate) timestamp_pools: Vec<TimestampQueryPool>,
-    pub(crate) timestamp_names: Vec<Vec<&'static str>>,
-    pub(crate) timestamp_written: Vec<bool>,
-    pub(crate) timestamp_period: f64,
-    pub(crate) last_timings: Vec<PassTiming>,
+    pub(crate) timestamps: TimestampState,
     pub(crate) pending_passes: Vec<RecordedPass>,
     pub(crate) frame_active: bool,
     pub(crate) image_index: u32,
     pub(crate) frame_index: usize,
     pub(crate) sc_graph_image: Option<Image>,
     pub(crate) pending_resize: Option<(u32, u32)>,
-    pub(crate) spirv_module_cache: HashMap<PathBuf, vk::ShaderModule>,
+    pub(crate) spirv_module_cache: FxHashMap<PathBuf, vk::ShaderModule>,
     #[cfg(debug_assertions)]
-    pub(crate) pipeline_descs: HashMap<PipelineHandle, PipelineDesc>,
+    pub(crate) pipeline_descs: FxHashMap<PipelineHandle, PipelineDesc>,
     #[cfg(debug_assertions)]
-    pub(crate) shader_module_paths: HashMap<ShaderModuleHandle, PathBuf>,
+    pub(crate) shader_module_paths: FxHashMap<ShaderModuleHandle, PathBuf>,
     #[cfg(debug_assertions)]
     pub(crate) shader_watcher: ShaderWatcher,
     pub(crate) device: GpuDevice,
@@ -227,20 +224,7 @@ impl Graph {
         };
 
         let timestamp_period = device.properties().limits.timestamp_period as f64;
-
-        let timestamp_pools = if timestamp_period > 0.0 {
-            (0..frames_count)
-                .map(|_| TimestampQueryPool::new(device.ash_device()))
-                .collect::<Result<Vec<_>, vk::Result>>()?
-        } else {
-            tracing::warn!(
-                "GPU timestamp queries not supported on this device — profiling disabled"
-            );
-            Vec::new()
-        };
-
-        let timestamp_names = vec![Vec::new(); frames_count];
-        let timestamp_written = vec![false; frames_count];
+        let timestamps = TimestampState::new(device.ash_device(), frames_count, timestamp_period)?;
 
         let push_constant_size = device.properties().limits.max_push_constants_size.min(256);
         let bindless = BindlessDescriptorTable::new(device.ash_device(), push_constant_size)?;
@@ -256,26 +240,22 @@ impl Graph {
             images: Vec::new(),
             persistent_count: 0,
             resizable_images: Vec::new(),
-            buffer_states: HashMap::new(),
+            buffer_states: FxHashMap::default(),
             pipeline_cache,
             pipeline_cache_path,
             transient_cache: TransientCache::new(),
-            timestamp_pools,
-            timestamp_names,
-            timestamp_written,
-            timestamp_period,
-            last_timings: Vec::new(),
+            timestamps,
             pending_passes: Vec::new(),
             frame_active: false,
             image_index: 0,
             frame_index: 0,
             sc_graph_image: None,
             pending_resize: None,
-            spirv_module_cache: HashMap::new(),
+            spirv_module_cache: FxHashMap::default(),
             #[cfg(debug_assertions)]
-            pipeline_descs: HashMap::new(),
+            pipeline_descs: FxHashMap::default(),
             #[cfg(debug_assertions)]
-            shader_module_paths: HashMap::new(),
+            shader_module_paths: FxHashMap::default(),
             #[cfg(debug_assertions)]
             shader_watcher: ShaderWatcher::default(),
         })
@@ -308,7 +288,7 @@ impl Graph {
     /// Each entry contains the pass name and its duration in nanoseconds.
     /// Returns an empty slice if the GPU does not support timestamp queries.
     pub fn pass_timings(&self) -> &[PassTiming] {
-        &self.last_timings
+        &self.timestamps.last_timings
     }
 
     /// Returns the `VkImageView` for a graph image, if it is currently allocated.
@@ -404,8 +384,8 @@ impl Graph {
         Ok(any_recreated)
     }
 
-    pub(crate) fn collect_live_images(&self, passes: &[RecordedPass]) -> HashSet<u32> {
-        let mut live = HashSet::new();
+    pub(crate) fn collect_live_images(&self, passes: &[RecordedPass]) -> FxHashSet<u32> {
+        let mut live = FxHashSet::default();
 
         if let Some(sc) = self.sc_graph_image {
             live.insert(sc.0);

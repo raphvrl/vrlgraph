@@ -289,9 +289,9 @@ impl Cmd {
     ///
     /// A pipeline must be bound first.
     pub fn push_shader<T: crate::ShaderType>(&self, data: &T) {
-        let mut buf = vec![0u8; T::PADDED_SIZE];
-        data.write_padded(&mut buf);
-        self.push_constants_raw(&buf);
+        let mut buf = [0u8; 256];
+        data.write_padded(&mut buf[..T::PADDED_SIZE]);
+        self.push_constants_raw(&buf[..T::PADDED_SIZE]);
     }
 
     /// Writes raw bytes as push constant data.

@@ -1,113 +1,125 @@
 use ash::vk;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct CullMode(pub(crate) vk::CullModeFlags);
+macro_rules! vk_flags_newtype {
+    (
+        pub struct $Name:ident($vk_ty:ty);
+        default = $default:ident;
+        bitor;
+        $(const $CONST:ident = $val:expr;)*
+    ) => {
+        vk_flags_newtype! {
+            pub struct $Name($vk_ty);
+            default = $default;
+            $(const $CONST = $val;)*
+        }
 
-impl CullMode {
-    pub const NONE: Self = Self(vk::CullModeFlags::NONE);
-    pub const FRONT: Self = Self(vk::CullModeFlags::FRONT);
-    pub const BACK: Self = Self(vk::CullModeFlags::BACK);
-    pub const FRONT_AND_BACK: Self = Self(vk::CullModeFlags::FRONT_AND_BACK);
+        impl std::ops::BitOr for $Name {
+            type Output = Self;
+            fn bitor(self, rhs: Self) -> Self {
+                Self(self.0 | rhs.0)
+            }
+        }
+    };
+
+    (
+        pub struct $Name:ident($vk_ty:ty);
+        default = $default:ident;
+        $(const $CONST:ident = $val:expr;)*
+    ) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub struct $Name(pub(crate) $vk_ty);
+
+        impl $Name {
+            $(pub const $CONST: Self = Self($val);)*
+        }
+
+        impl Default for $Name {
+            fn default() -> Self {
+                Self::$default
+            }
+        }
+
+        impl From<$Name> for $vk_ty {
+            fn from(v: $Name) -> Self {
+                v.0
+            }
+        }
+
+        impl From<$vk_ty> for $Name {
+            fn from(v: $vk_ty) -> Self {
+                Self(v)
+            }
+        }
+    };
 }
 
-impl Default for CullMode {
-    fn default() -> Self {
-        Self::NONE
-    }
+vk_flags_newtype! {
+    pub struct CullMode(vk::CullModeFlags);
+    default = NONE;
+    bitor;
+    const NONE = vk::CullModeFlags::NONE;
+    const FRONT = vk::CullModeFlags::FRONT;
+    const BACK = vk::CullModeFlags::BACK;
+    const FRONT_AND_BACK = vk::CullModeFlags::FRONT_AND_BACK;
 }
 
-impl From<CullMode> for vk::CullModeFlags {
-    fn from(m: CullMode) -> Self {
-        m.0
-    }
+vk_flags_newtype! {
+    pub struct ColorWriteMask(vk::ColorComponentFlags);
+    default = RGBA;
+    bitor;
+    const NONE = vk::ColorComponentFlags::empty();
+    const R = vk::ColorComponentFlags::R;
+    const G = vk::ColorComponentFlags::G;
+    const B = vk::ColorComponentFlags::B;
+    const A = vk::ColorComponentFlags::A;
+    const RGBA = vk::ColorComponentFlags::RGBA;
 }
 
-impl From<vk::CullModeFlags> for CullMode {
-    fn from(f: vk::CullModeFlags) -> Self {
-        Self(f)
-    }
+vk_flags_newtype! {
+    pub struct SampleCount(vk::SampleCountFlags);
+    default = S1;
+    bitor;
+    const S1 = vk::SampleCountFlags::TYPE_1;
+    const S2 = vk::SampleCountFlags::TYPE_2;
+    const S4 = vk::SampleCountFlags::TYPE_4;
+    const S8 = vk::SampleCountFlags::TYPE_8;
+    const S16 = vk::SampleCountFlags::TYPE_16;
+    const S32 = vk::SampleCountFlags::TYPE_32;
+    const S64 = vk::SampleCountFlags::TYPE_64;
 }
 
-impl std::ops::BitOr for CullMode {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        Self(self.0 | rhs.0)
-    }
+vk_flags_newtype! {
+    pub struct Filter(vk::Filter);
+    default = LINEAR;
+    const NEAREST = vk::Filter::NEAREST;
+    const LINEAR = vk::Filter::LINEAR;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ColorWriteMask(pub(crate) vk::ColorComponentFlags);
-
-impl ColorWriteMask {
-    pub const NONE: Self = Self(vk::ColorComponentFlags::empty());
-    pub const R: Self = Self(vk::ColorComponentFlags::R);
-    pub const G: Self = Self(vk::ColorComponentFlags::G);
-    pub const B: Self = Self(vk::ColorComponentFlags::B);
-    pub const A: Self = Self(vk::ColorComponentFlags::A);
-    pub const RGBA: Self = Self(vk::ColorComponentFlags::RGBA);
+vk_flags_newtype! {
+    pub struct MipmapMode(vk::SamplerMipmapMode);
+    default = LINEAR;
+    const NEAREST = vk::SamplerMipmapMode::NEAREST;
+    const LINEAR = vk::SamplerMipmapMode::LINEAR;
 }
 
-impl Default for ColorWriteMask {
-    fn default() -> Self {
-        Self::RGBA
-    }
+vk_flags_newtype! {
+    pub struct AddressMode(vk::SamplerAddressMode);
+    default = REPEAT;
+    const REPEAT = vk::SamplerAddressMode::REPEAT;
+    const MIRRORED_REPEAT = vk::SamplerAddressMode::MIRRORED_REPEAT;
+    const CLAMP_TO_EDGE = vk::SamplerAddressMode::CLAMP_TO_EDGE;
+    const CLAMP_TO_BORDER = vk::SamplerAddressMode::CLAMP_TO_BORDER;
 }
 
-impl From<ColorWriteMask> for vk::ColorComponentFlags {
-    fn from(m: ColorWriteMask) -> Self {
-        m.0
-    }
-}
-
-impl From<vk::ColorComponentFlags> for ColorWriteMask {
-    fn from(f: vk::ColorComponentFlags) -> Self {
-        Self(f)
-    }
-}
-
-impl std::ops::BitOr for ColorWriteMask {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        Self(self.0 | rhs.0)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct SampleCount(pub(crate) vk::SampleCountFlags);
-
-impl SampleCount {
-    pub const S1: Self = Self(vk::SampleCountFlags::TYPE_1);
-    pub const S2: Self = Self(vk::SampleCountFlags::TYPE_2);
-    pub const S4: Self = Self(vk::SampleCountFlags::TYPE_4);
-    pub const S8: Self = Self(vk::SampleCountFlags::TYPE_8);
-    pub const S16: Self = Self(vk::SampleCountFlags::TYPE_16);
-    pub const S32: Self = Self(vk::SampleCountFlags::TYPE_32);
-    pub const S64: Self = Self(vk::SampleCountFlags::TYPE_64);
-}
-
-impl Default for SampleCount {
-    fn default() -> Self {
-        Self::S1
-    }
-}
-
-impl From<SampleCount> for vk::SampleCountFlags {
-    fn from(s: SampleCount) -> Self {
-        s.0
-    }
-}
-
-impl From<vk::SampleCountFlags> for SampleCount {
-    fn from(f: vk::SampleCountFlags) -> Self {
-        Self(f)
-    }
-}
-
-impl std::ops::BitOr for SampleCount {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        Self(self.0 | rhs.0)
-    }
+vk_flags_newtype! {
+    pub struct BorderColor(vk::BorderColor);
+    default = FLOAT_TRANSPARENT_BLACK;
+    const FLOAT_TRANSPARENT_BLACK = vk::BorderColor::FLOAT_TRANSPARENT_BLACK;
+    const INT_TRANSPARENT_BLACK = vk::BorderColor::INT_TRANSPARENT_BLACK;
+    const FLOAT_OPAQUE_BLACK = vk::BorderColor::FLOAT_OPAQUE_BLACK;
+    const INT_OPAQUE_BLACK = vk::BorderColor::INT_OPAQUE_BLACK;
+    const FLOAT_OPAQUE_WHITE = vk::BorderColor::FLOAT_OPAQUE_WHITE;
+    const INT_OPAQUE_WHITE = vk::BorderColor::INT_OPAQUE_WHITE;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -240,115 +252,5 @@ impl From<vk::PolygonMode> for PolygonMode {
             vk::PolygonMode::POINT => Self::Point,
             _ => Self::Fill,
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Filter(pub(crate) vk::Filter);
-
-impl Filter {
-    pub const NEAREST: Self = Self(vk::Filter::NEAREST);
-    pub const LINEAR: Self = Self(vk::Filter::LINEAR);
-}
-
-impl Default for Filter {
-    fn default() -> Self {
-        Self::LINEAR
-    }
-}
-
-impl From<Filter> for vk::Filter {
-    fn from(f: Filter) -> Self {
-        f.0
-    }
-}
-
-impl From<vk::Filter> for Filter {
-    fn from(f: vk::Filter) -> Self {
-        Self(f)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct MipmapMode(pub(crate) vk::SamplerMipmapMode);
-
-impl MipmapMode {
-    pub const NEAREST: Self = Self(vk::SamplerMipmapMode::NEAREST);
-    pub const LINEAR: Self = Self(vk::SamplerMipmapMode::LINEAR);
-}
-
-impl Default for MipmapMode {
-    fn default() -> Self {
-        Self::LINEAR
-    }
-}
-
-impl From<MipmapMode> for vk::SamplerMipmapMode {
-    fn from(m: MipmapMode) -> Self {
-        m.0
-    }
-}
-
-impl From<vk::SamplerMipmapMode> for MipmapMode {
-    fn from(m: vk::SamplerMipmapMode) -> Self {
-        Self(m)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct AddressMode(pub(crate) vk::SamplerAddressMode);
-
-impl AddressMode {
-    pub const REPEAT: Self = Self(vk::SamplerAddressMode::REPEAT);
-    pub const MIRRORED_REPEAT: Self = Self(vk::SamplerAddressMode::MIRRORED_REPEAT);
-    pub const CLAMP_TO_EDGE: Self = Self(vk::SamplerAddressMode::CLAMP_TO_EDGE);
-    pub const CLAMP_TO_BORDER: Self = Self(vk::SamplerAddressMode::CLAMP_TO_BORDER);
-}
-
-impl Default for AddressMode {
-    fn default() -> Self {
-        Self::REPEAT
-    }
-}
-
-impl From<AddressMode> for vk::SamplerAddressMode {
-    fn from(a: AddressMode) -> Self {
-        a.0
-    }
-}
-
-impl From<vk::SamplerAddressMode> for AddressMode {
-    fn from(a: vk::SamplerAddressMode) -> Self {
-        Self(a)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct BorderColor(pub(crate) vk::BorderColor);
-
-impl BorderColor {
-    pub const FLOAT_TRANSPARENT_BLACK: Self = Self(vk::BorderColor::FLOAT_TRANSPARENT_BLACK);
-    pub const INT_TRANSPARENT_BLACK: Self = Self(vk::BorderColor::INT_TRANSPARENT_BLACK);
-    pub const FLOAT_OPAQUE_BLACK: Self = Self(vk::BorderColor::FLOAT_OPAQUE_BLACK);
-    pub const INT_OPAQUE_BLACK: Self = Self(vk::BorderColor::INT_OPAQUE_BLACK);
-    pub const FLOAT_OPAQUE_WHITE: Self = Self(vk::BorderColor::FLOAT_OPAQUE_WHITE);
-    pub const INT_OPAQUE_WHITE: Self = Self(vk::BorderColor::INT_OPAQUE_WHITE);
-}
-
-impl Default for BorderColor {
-    fn default() -> Self {
-        Self::FLOAT_TRANSPARENT_BLACK
-    }
-}
-
-impl From<BorderColor> for vk::BorderColor {
-    fn from(b: BorderColor) -> Self {
-        b.0
-    }
-}
-
-impl From<vk::BorderColor> for BorderColor {
-    fn from(b: vk::BorderColor) -> Self {
-        Self(b)
     }
 }

@@ -8,6 +8,40 @@ pub struct PassTiming {
     pub gpu_ns: u64,
 }
 
+pub(crate) struct TimestampState {
+    pub pools: Vec<TimestampQueryPool>,
+    pub names: Vec<Vec<&'static str>>,
+    pub written: Vec<bool>,
+    pub period: f64,
+    pub last_timings: Vec<PassTiming>,
+}
+
+impl TimestampState {
+    pub fn new(device: &ash::Device, frames_count: usize, period: f64) -> Result<Self, vk::Result> {
+        let pools = if period > 0.0 {
+            (0..frames_count)
+                .map(|_| TimestampQueryPool::new(device))
+                .collect::<Result<Vec<_>, vk::Result>>()?
+        } else {
+            tracing::warn!(
+                "GPU timestamp queries not supported on this device — profiling disabled"
+            );
+            Vec::new()
+        };
+        Ok(Self {
+            pools,
+            names: vec![Vec::new(); frames_count],
+            written: vec![false; frames_count],
+            period,
+            last_timings: Vec::new(),
+        })
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        !self.pools.is_empty()
+    }
+}
+
 pub(crate) struct TimestampQueryPool {
     pool: vk::QueryPool,
     device: ash::Device,

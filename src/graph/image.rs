@@ -39,15 +39,14 @@ pub(crate) struct ImageEntry {
     pub array_index: Option<BindlessIndex<Array2D>>,
 }
 
-impl ImageEntry {
-    pub(crate) fn transient(desc: ImageDesc) -> Self {
-        let aspect = aspect_from_format(desc.format);
+impl Default for ImageEntry {
+    fn default() -> Self {
         Self {
-            desc,
+            desc: ImageDesc::default(),
             origin: ImageOrigin::Transient,
             handle: None,
             external: None,
-            aspect,
+            aspect: vk::ImageAspectFlags::COLOR,
             usage: vk::ImageUsageFlags::empty(),
             layout: vk::ImageLayout::UNDEFINED,
             stage: vk::PipelineStageFlags2::NONE,
@@ -58,6 +57,17 @@ impl ImageEntry {
             array_index: None,
         }
     }
+}
+
+impl ImageEntry {
+    pub(crate) fn transient(desc: ImageDesc) -> Self {
+        let aspect = aspect_from_format(desc.format);
+        Self {
+            desc,
+            aspect,
+            ..Default::default()
+        }
+    }
 
     pub(crate) fn persistent(desc: ImageDesc) -> Self {
         let aspect = aspect_from_format(desc.format);
@@ -65,17 +75,9 @@ impl ImageEntry {
         Self {
             desc,
             origin: ImageOrigin::Persistent,
-            handle: None,
-            external: None,
             aspect,
             usage,
-            layout: vk::ImageLayout::UNDEFINED,
-            stage: vk::PipelineStageFlags2::NONE,
-            access: vk::AccessFlags2::NONE,
-            sampled_index: None,
-            storage_index: None,
-            cubemap_index: None,
-            array_index: None,
+            ..Default::default()
         }
     }
 
@@ -85,19 +87,14 @@ impl ImageEntry {
             desc,
             origin: ImageOrigin::Persistent,
             handle: Some(handle),
-            external: None,
             aspect,
-
             usage: vk::ImageUsageFlags::SAMPLED
                 | vk::ImageUsageFlags::TRANSFER_DST
                 | vk::ImageUsageFlags::TRANSFER_SRC,
             layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
             access: vk::AccessFlags2::SHADER_READ,
-            sampled_index: None,
-            storage_index: None,
-            cubemap_index: None,
-            array_index: None,
+            ..Default::default()
         }
     }
 
@@ -113,17 +110,8 @@ impl ImageEntry {
                 ..Default::default()
             },
             origin: ImageOrigin::External,
-            handle: None,
             external: Some((raw, view)),
-            aspect: vk::ImageAspectFlags::COLOR,
-            usage: vk::ImageUsageFlags::empty(),
-            layout: vk::ImageLayout::UNDEFINED,
-            stage: vk::PipelineStageFlags2::NONE,
-            access: vk::AccessFlags2::NONE,
-            sampled_index: None,
-            storage_index: None,
-            cubemap_index: None,
-            array_index: None,
+            ..Default::default()
         }
     }
 

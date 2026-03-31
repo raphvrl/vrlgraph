@@ -51,10 +51,19 @@ macro_rules! impl_shader_type_pod {
 }
 
 impl_shader_type_pod!(
-    f32, u32, i32, u64,
-    [f32; 2], [f32; 3], [f32; 4],
-    [u32; 2], [u32; 3], [u32; 4],
-    [i32; 2], [i32; 3], [i32; 4],
+    f32,
+    u32,
+    i32,
+    u64,
+    [f32; 2],
+    [f32; 3],
+    [f32; 4],
+    [u32; 2],
+    [u32; 3],
+    [u32; 4],
+    [i32; 2],
+    [i32; 3],
+    [i32; 4],
     [[f32; 4]; 4],
     [[f32; 4]; 3]
 );
@@ -64,35 +73,18 @@ mod glam_impls {
     use super::*;
 
     impl_shader_type_pod!(
-        glam::Vec2, glam::Vec3A, glam::Vec4,
-        glam::UVec2, glam::UVec4,
-        glam::IVec2, glam::IVec4,
+        glam::Vec2,
+        glam::Vec3,
+        glam::Vec3A,
+        glam::Vec4,
+        glam::UVec2,
+        glam::UVec3,
+        glam::UVec4,
+        glam::IVec2,
+        glam::IVec3,
+        glam::IVec4,
         glam::Mat4
     );
-
-    impl ShaderType for glam::Vec3 {
-        const PADDED_SIZE: usize = 12;
-
-        fn write_padded(&self, dst: &mut [u8]) {
-            dst[..12].copy_from_slice(bytemuck::bytes_of(self));
-        }
-    }
-
-    impl ShaderType for glam::UVec3 {
-        const PADDED_SIZE: usize = 12;
-
-        fn write_padded(&self, dst: &mut [u8]) {
-            dst[..12].copy_from_slice(bytemuck::bytes_of(self));
-        }
-    }
-
-    impl ShaderType for glam::IVec3 {
-        const PADDED_SIZE: usize = 12;
-
-        fn write_padded(&self, dst: &mut [u8]) {
-            dst[..12].copy_from_slice(bytemuck::bytes_of(self));
-        }
-    }
 
     impl ShaderType for glam::Mat3 {
         const PADDED_SIZE: usize = 48;

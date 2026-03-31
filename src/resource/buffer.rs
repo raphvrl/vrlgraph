@@ -157,8 +157,14 @@ impl GpuBuffer {
 
     /// Writes a [`ShaderType`](crate::ShaderType) value with automatic padding.
     pub fn write_shader<T: crate::ShaderType>(&self, value: &T) {
-        let mut buf = vec![0u8; T::PADDED_SIZE];
-        value.write_padded(&mut buf);
-        self.write_bytes(&buf);
+        if T::PADDED_SIZE <= 256 {
+            let mut buf = [0u8; 256];
+            value.write_padded(&mut buf[..T::PADDED_SIZE]);
+            self.write_bytes(&buf[..T::PADDED_SIZE]);
+        } else {
+            let mut buf = vec![0u8; T::PADDED_SIZE];
+            value.write_padded(&mut buf);
+            self.write_bytes(&buf);
+        }
     }
 }

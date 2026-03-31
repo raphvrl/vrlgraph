@@ -28,9 +28,7 @@ impl<E: Example> App<E> {
 
 impl<E: Example> ApplicationHandler for App<E> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
-            .create_window(E::window_attributes())
-            .unwrap();
+        let window = event_loop.create_window(E::window_attributes()).unwrap();
 
         match E::init(window) {
             Ok(state) => self.state = Some(state),

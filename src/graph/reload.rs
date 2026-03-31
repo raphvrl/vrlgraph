@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -45,7 +45,7 @@ impl PipelineDesc {
 pub(crate) struct ShaderWatcher {
     _watcher: notify::PollWatcher,
     rx: mpsc::Receiver<PathBuf>,
-    watched: HashSet<PathBuf>,
+    watched: FxHashSet<PathBuf>,
 }
 
 impl ShaderWatcher {
@@ -68,7 +68,7 @@ impl ShaderWatcher {
         Ok(Self {
             _watcher: watcher,
             rx,
-            watched: HashSet::new(),
+            watched: FxHashSet::default(),
         })
     }
 
@@ -99,7 +99,7 @@ impl Default for ShaderWatcher {
             Self {
                 _watcher: watcher,
                 rx,
-                watched: HashSet::new(),
+                watched: FxHashSet::default(),
             }
         })
     }

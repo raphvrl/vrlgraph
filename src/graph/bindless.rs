@@ -69,6 +69,15 @@ impl Sampler {
     }
 }
 
+fn allocate_slot(free: &mut Vec<u32>, count: &mut u32, max: u32, msg: &str) -> u32 {
+    free.pop().unwrap_or_else(|| {
+        let i = *count;
+        *count += 1;
+        assert!(i < max, "{}", msg);
+        i
+    })
+}
+
 /// A single, global descriptor set holding all sampled images, storage images,
 /// and samplers for the entire frame.
 ///
@@ -235,26 +244,24 @@ impl BindlessDescriptorTable {
         view: vk::ImageView,
         image_layout: vk::ImageLayout,
     ) -> BindlessIndex<Sampled> {
-        let index = self.sampled_free.pop().unwrap_or_else(|| {
-            let i = self.sampled_count;
-            self.sampled_count += 1;
-            assert!(i < MAX_SAMPLED_IMAGES, "bindless sampled image table full");
-            i
-        });
-
+        let index = allocate_slot(
+            &mut self.sampled_free,
+            &mut self.sampled_count,
+            MAX_SAMPLED_IMAGES,
+            "bindless sampled image table full",
+        );
         self.write_sampled(index, view, image_layout);
         BindlessIndex::new(index)
     }
 
     /// Registers a storage image and returns its bindless index.
     pub fn allocate_storage_image(&mut self, view: vk::ImageView) -> BindlessIndex<Storage> {
-        let index = self.storage_free.pop().unwrap_or_else(|| {
-            let i = self.storage_count;
-            self.storage_count += 1;
-            assert!(i < MAX_STORAGE_IMAGES, "bindless storage image table full");
-            i
-        });
-
+        let index = allocate_slot(
+            &mut self.storage_free,
+            &mut self.storage_count,
+            MAX_STORAGE_IMAGES,
+            "bindless storage image table full",
+        );
         self.write_storage(index, view);
         BindlessIndex::new(index)
     }
@@ -297,12 +304,12 @@ impl BindlessDescriptorTable {
         view: vk::ImageView,
         image_layout: vk::ImageLayout,
     ) -> BindlessIndex<Cubemap> {
-        let index = self.cubemap_free.pop().unwrap_or_else(|| {
-            let i = self.cubemap_count;
-            self.cubemap_count += 1;
-            assert!(i < MAX_CUBEMAP_IMAGES, "bindless cubemap table full");
-            i
-        });
+        let index = allocate_slot(
+            &mut self.cubemap_free,
+            &mut self.cubemap_count,
+            MAX_CUBEMAP_IMAGES,
+            "bindless cubemap table full",
+        );
         self.write_cubemap(index, view, image_layout);
         BindlessIndex::new(index)
     }
@@ -313,12 +320,12 @@ impl BindlessDescriptorTable {
         view: vk::ImageView,
         image_layout: vk::ImageLayout,
     ) -> BindlessIndex<Array2D> {
-        let index = self.array_free.pop().unwrap_or_else(|| {
-            let i = self.array_count;
-            self.array_count += 1;
-            assert!(i < MAX_ARRAY_IMAGES, "bindless array texture table full");
-            i
-        });
+        let index = allocate_slot(
+            &mut self.array_free,
+            &mut self.array_count,
+            MAX_ARRAY_IMAGES,
+            "bindless array texture table full",
+        );
         self.write_array(index, view, image_layout);
         BindlessIndex::new(index)
     }
@@ -385,55 +392,45 @@ impl BindlessDescriptorTable {
         }
     }
 
-    fn write_sampled(&self, index: u32, view: vk::ImageView, image_layout: vk::ImageLayout) {
+    fn write_image_descriptor(
+        &self,
+        binding: u32,
+        index: u32,
+        view: vk::ImageView,
+        layout: vk::ImageLayout,
+        descriptor_type: vk::DescriptorType,
+    ) {
         let info = vk::DescriptorImageInfo::default()
             .image_view(view)
-            .image_layout(image_layout);
+            .image_layout(layout);
         let write = vk::WriteDescriptorSet::default()
             .dst_set(self.set)
-            .dst_binding(0)
+            .dst_binding(binding)
             .dst_array_element(index)
-            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .descriptor_type(descriptor_type)
             .image_info(std::slice::from_ref(&info));
         unsafe { self.device.update_descriptor_sets(&[write], &[]) };
+    }
+
+    fn write_sampled(&self, index: u32, view: vk::ImageView, layout: vk::ImageLayout) {
+        self.write_image_descriptor(0, index, view, layout, vk::DescriptorType::SAMPLED_IMAGE);
     }
 
     fn write_storage(&self, index: u32, view: vk::ImageView) {
-        let info = vk::DescriptorImageInfo::default()
-            .image_view(view)
-            .image_layout(vk::ImageLayout::GENERAL);
-        let write = vk::WriteDescriptorSet::default()
-            .dst_set(self.set)
-            .dst_binding(1)
-            .dst_array_element(index)
-            .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-            .image_info(std::slice::from_ref(&info));
-        unsafe { self.device.update_descriptor_sets(&[write], &[]) };
+        self.write_image_descriptor(
+            1,
+            index,
+            view,
+            vk::ImageLayout::GENERAL,
+            vk::DescriptorType::STORAGE_IMAGE,
+        );
     }
 
-    fn write_cubemap(&self, index: u32, view: vk::ImageView, image_layout: vk::ImageLayout) {
-        let info = vk::DescriptorImageInfo::default()
-            .image_view(view)
-            .image_layout(image_layout);
-        let write = vk::WriteDescriptorSet::default()
-            .dst_set(self.set)
-            .dst_binding(3)
-            .dst_array_element(index)
-            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-            .image_info(std::slice::from_ref(&info));
-        unsafe { self.device.update_descriptor_sets(&[write], &[]) };
+    fn write_cubemap(&self, index: u32, view: vk::ImageView, layout: vk::ImageLayout) {
+        self.write_image_descriptor(3, index, view, layout, vk::DescriptorType::SAMPLED_IMAGE);
     }
 
-    fn write_array(&self, index: u32, view: vk::ImageView, image_layout: vk::ImageLayout) {
-        let info = vk::DescriptorImageInfo::default()
-            .image_view(view)
-            .image_layout(image_layout);
-        let write = vk::WriteDescriptorSet::default()
-            .dst_set(self.set)
-            .dst_binding(4)
-            .dst_array_element(index)
-            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-            .image_info(std::slice::from_ref(&info));
-        unsafe { self.device.update_descriptor_sets(&[write], &[]) };
+    fn write_array(&self, index: u32, view: vk::ImageView, layout: vk::ImageLayout) {
+        self.write_image_descriptor(4, index, view, layout, vk::DescriptorType::SAMPLED_IMAGE);
     }
 }

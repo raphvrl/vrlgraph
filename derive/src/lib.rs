@@ -182,8 +182,7 @@ fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
 pub fn derive_shader_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let layout = parse_shader_type_layout(&input.attrs)
-        .unwrap_or(shader::Layout::Std140);
+    let layout = parse_shader_type_layout(&input.attrs).unwrap_or(shader::Layout::Std140);
 
     shader::impl_shader_type(input, layout)
         .unwrap_or_else(|e| e.to_compile_error())

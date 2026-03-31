@@ -26,10 +26,18 @@ struct PC {
 }
 
 const VERTICES: [Vertex; 4] = [
-    Vertex { pos: Vec2::new(-0.5, -0.5) },
-    Vertex { pos: Vec2::new(0.5, -0.5) },
-    Vertex { pos: Vec2::new(0.5, 0.5) },
-    Vertex { pos: Vec2::new(-0.5, 0.5) },
+    Vertex {
+        pos: Vec2::new(-0.5, -0.5),
+    },
+    Vertex {
+        pos: Vec2::new(0.5, -0.5),
+    },
+    Vertex {
+        pos: Vec2::new(0.5, 0.5),
+    },
+    Vertex {
+        pos: Vec2::new(-0.5, 0.5),
+    },
 ];
 
 const INDICES: [u32; 6] = [0, 1, 2, 0, 2, 3];
@@ -70,9 +78,12 @@ impl common::Example for State {
         let vertex_buf = graph.vertex_buffer("quad_verts", &VERTICES)?;
         let index_buf = graph.index_buffer("quad_indices", &INDICES)?;
 
-        let transform_buf = graph.uniform_shader("transform", &Transform {
-            matrix: Mat4::IDENTITY,
-        })?;
+        let transform_buf = graph.uniform_shader(
+            "transform",
+            &Transform {
+                matrix: Mat4::IDENTITY,
+            },
+        )?;
         let colors_buf = graph.storage_buffer("colors", &COLORS)?;
 
         let vs = graph.shader_module("shaders/mesh.vert.spv", "main")?;
@@ -107,7 +118,8 @@ impl common::Example for State {
             Vec3::ZERO,
         );
 
-        self.graph.write_shader(self.transform_buf, &Transform { matrix });
+        self.graph
+            .write_shader(self.transform_buf, &Transform { matrix });
 
         let frame = self.graph.begin_frame()?;
 

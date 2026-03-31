@@ -115,22 +115,52 @@ fn resolve_path_layout(tp: &TypePath, _layout: Layout) -> syn::Result<TypeLayout
         Some("f32" | "u32" | "i32") => Ok(TypeLayout { align: 4, size: 4 }),
         Some("u64") => Ok(TypeLayout { align: 8, size: 8 }),
         Some("Vec2") => Ok(TypeLayout { align: 8, size: 8 }),
-        Some("Vec3") => Ok(TypeLayout { align: 16, size: 12 }),
-        Some("Vec3A") => Ok(TypeLayout { align: 16, size: 16 }),
-        Some("Vec4") => Ok(TypeLayout { align: 16, size: 16 }),
+        Some("Vec3") => Ok(TypeLayout {
+            align: 16,
+            size: 12,
+        }),
+        Some("Vec3A") => Ok(TypeLayout {
+            align: 16,
+            size: 16,
+        }),
+        Some("Vec4") => Ok(TypeLayout {
+            align: 16,
+            size: 16,
+        }),
         Some("UVec2") => Ok(TypeLayout { align: 8, size: 8 }),
-        Some("UVec3") => Ok(TypeLayout { align: 16, size: 12 }),
-        Some("UVec4") => Ok(TypeLayout { align: 16, size: 16 }),
+        Some("UVec3") => Ok(TypeLayout {
+            align: 16,
+            size: 12,
+        }),
+        Some("UVec4") => Ok(TypeLayout {
+            align: 16,
+            size: 16,
+        }),
         Some("IVec2") => Ok(TypeLayout { align: 8, size: 8 }),
-        Some("IVec3") => Ok(TypeLayout { align: 16, size: 12 }),
-        Some("IVec4") => Ok(TypeLayout { align: 16, size: 16 }),
-        Some("Mat3") => Ok(TypeLayout { align: 16, size: 48 }),
-        Some("Mat4") => Ok(TypeLayout { align: 16, size: 64 }),
+        Some("IVec3") => Ok(TypeLayout {
+            align: 16,
+            size: 12,
+        }),
+        Some("IVec4") => Ok(TypeLayout {
+            align: 16,
+            size: 16,
+        }),
+        Some("Mat3") => Ok(TypeLayout {
+            align: 16,
+            size: 48,
+        }),
+        Some("Mat4") => Ok(TypeLayout {
+            align: 16,
+            size: 64,
+        }),
         _ => Err(syn::Error::new_spanned(
             tp,
             format!(
                 "unknown type `{}` for `ShaderType` — use `#[align(N)]` to specify layout manually",
-                tp.path.segments.last().map_or("?", |s| s.ident.to_string().leak())
+                tp.path
+                    .segments
+                    .last()
+                    .map_or("?", |s| s.ident.to_string().leak())
             ),
         )),
     }
@@ -177,10 +207,16 @@ fn resolve_array_layout(ta: &TypeArray, layout: Layout) -> syn::Result<TypeLayou
             };
 
             if scalar_size == 4 && inner_len == 4 && len == 4 {
-                return Ok(TypeLayout { align: 16, size: 64 });
+                return Ok(TypeLayout {
+                    align: 16,
+                    size: 64,
+                });
             }
             if scalar_size == 4 && inner_len == 4 && len == 3 {
-                return Ok(TypeLayout { align: 16, size: 48 });
+                return Ok(TypeLayout {
+                    align: 16,
+                    size: 48,
+                });
             }
 
             Err(syn::Error::new_spanned(
