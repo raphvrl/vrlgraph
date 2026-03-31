@@ -1,10 +1,9 @@
-use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::window::{Window, WindowId};
+#[path = "../common/mod.rs"]
+mod common;
 
 use vrlgraph::ash::vk;
 use vrlgraph::prelude::*;
+use winit::window::Window;
 
 #[derive(ShaderType)]
 struct FillParams {
@@ -28,8 +27,8 @@ struct State {
     sampler: Sampler,
 }
 
-impl State {
-    fn new(window: Window) -> Result<Self, GraphError> {
+impl common::Example for State {
+    fn init(window: Window) -> Result<Self, GraphError> {
         let size = window.inner_size();
 
         let mut graph = Graph::builder()
@@ -125,65 +124,12 @@ impl State {
     fn resize(&mut self, width: u32, height: u32) {
         self.graph.resize(width, height);
     }
-}
 
-struct App {
-    state: Option<State>,
-}
-
-impl App {
-    fn new() -> Self {
-        Self { state: None }
-    }
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
-            .create_window(Window::default_attributes())
-            .unwrap();
-
-        match State::new(window) {
-            Ok(state) => self.state = Some(state),
-            Err(e) => {
-                tracing::error!("init error: {e}");
-                event_loop.exit();
-            }
-        }
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        let Some(state) = &mut self.state else { return };
-
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => {
-                state.resize(size.width, size.height);
-            }
-            WindowEvent::RedrawRequested => match state.draw() {
-                Ok(()) => {}
-                Err(GraphError::SwapchainOutOfDate) => {
-                    let size = state.window.inner_size();
-                    state.resize(size.width, size.height);
-                }
-                Err(e) => {
-                    tracing::error!("draw error: {e}");
-                    event_loop.exit();
-                }
-            },
-            _ => {}
-        }
+    fn window(&self) -> &Window {
+        &self.window
     }
 }
 
 fn main() {
-    tracing_subscriber::fmt::init();
-    let event_loop = EventLoop::new().unwrap();
-    let mut app = App::new();
-    event_loop.run_app(&mut app).unwrap();
+    common::run::<State>();
 }

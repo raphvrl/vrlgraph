@@ -22,6 +22,20 @@ vrlgraph = { git = "https://github.com/raphvrl/vrlgraph" }
 
 `ash` is re-exported from vrlgraph, so you do not need to declare it as a separate dependency.
 
+### Optional features
+
+| Feature | Description |
+|---|---|
+| `glam` | Adds `VertexAttribute` and `ShaderType` implementations for glam vector and matrix types |
+
+To use the `glam` feature, enable it in your `Cargo.toml` and make sure glam is declared with the `bytemuck` feature, which is required for glam types to implement `Pod`:
+
+```toml
+[dependencies]
+vrlgraph = { git = "https://github.com/raphvrl/vrlgraph", features = ["glam"] }
+glam = { version = "0.32.1", features = ["bytemuck"] }
+```
+
 Shaders must be compiled to SPIR-V before being passed to the pipeline builders. vrlgraph loads them from the filesystem at the paths you provide.
 
 ---

@@ -1,24 +1,22 @@
+#[path = "../common/mod.rs"]
+mod common;
+
 use std::time::Instant;
 
-use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::window::{Window, WindowId};
-
 use bytemuck::{Pod, Zeroable};
-
+use glam::{Mat4, Quat, Vec2, Vec3};
 use vrlgraph::prelude::*;
+use winit::window::{Window, WindowAttributes};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
 struct Vertex {
-    pos: [f32; 2],
+    pos: Vec2,
 }
 
 #[derive(ShaderType)]
 struct Transform {
-    angle: f32,
-    scale: f32,
+    matrix: Mat4,
 }
 
 #[derive(ShaderType)]
@@ -28,10 +26,10 @@ struct PC {
 }
 
 const VERTICES: [Vertex; 4] = [
-    Vertex { pos: [-0.5, -0.5] },
-    Vertex { pos: [0.5, -0.5] },
-    Vertex { pos: [0.5, 0.5] },
-    Vertex { pos: [-0.5, 0.5] },
+    Vertex { pos: Vec2::new(-0.5, -0.5) },
+    Vertex { pos: Vec2::new(0.5, -0.5) },
+    Vertex { pos: Vec2::new(0.5, 0.5) },
+    Vertex { pos: Vec2::new(-0.5, 0.5) },
 ];
 
 const INDICES: [u32; 6] = [0, 1, 2, 0, 2, 3];
@@ -54,8 +52,12 @@ struct State {
     start: Instant,
 }
 
-impl State {
-    fn new(window: Window) -> Result<Self, GraphError> {
+impl common::Example for State {
+    fn window_attributes() -> WindowAttributes {
+        Window::default_attributes().with_title("vrlgraph — buffers")
+    }
+
+    fn init(window: Window) -> Result<Self, GraphError> {
         let size = window.inner_size();
 
         let mut graph = Graph::builder()
@@ -66,16 +68,11 @@ impl State {
             .build()?;
 
         let vertex_buf = graph.vertex_buffer("quad_verts", &VERTICES)?;
-
         let index_buf = graph.index_buffer("quad_indices", &INDICES)?;
 
-        let transform = Transform {
-            angle: 0.0,
-            scale: 0.8,
-        };
-
-        let transform_buf = graph.uniform_shader("transform", &transform)?;
-
+        let transform_buf = graph.uniform_shader("transform", &Transform {
+            matrix: Mat4::IDENTITY,
+        })?;
         let colors_buf = graph.storage_buffer("colors", &COLORS)?;
 
         let vs = graph.shader_module("shaders/mesh.vert.spv", "main")?;
@@ -104,9 +101,13 @@ impl State {
         self.window.request_redraw();
 
         let angle = self.start.elapsed().as_secs_f32();
+        let matrix = Mat4::from_scale_rotation_translation(
+            Vec3::splat(0.8),
+            Quat::from_rotation_z(angle),
+            Vec3::ZERO,
+        );
 
-        self.graph
-            .write_shader(self.transform_buf, &Transform { angle, scale: 0.8 });
+        self.graph.write_shader(self.transform_buf, &Transform { matrix });
 
         let frame = self.graph.begin_frame()?;
 
@@ -146,65 +147,12 @@ impl State {
     fn resize(&mut self, width: u32, height: u32) {
         self.graph.resize(width, height);
     }
-}
 
-struct App {
-    state: Option<State>,
-}
-
-impl App {
-    fn new() -> Self {
-        Self { state: None }
-    }
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window_attributes = Window::default_attributes().with_title("vrlgraph — buffers");
-
-        let window = event_loop.create_window(window_attributes).unwrap();
-
-        match State::new(window) {
-            Ok(state) => self.state = Some(state),
-            Err(e) => {
-                tracing::error!("init error: {e}");
-                event_loop.exit();
-            }
-        }
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        let Some(state) = &mut self.state else { return };
-
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => {
-                state.resize(size.width, size.height);
-            }
-            WindowEvent::RedrawRequested => match state.draw() {
-                Ok(()) => {}
-                Err(GraphError::SwapchainOutOfDate) => {
-                    let size = state.window.inner_size();
-                    state.resize(size.width, size.height);
-                }
-                Err(e) => {
-                    tracing::error!("draw error: {e}");
-                    event_loop.exit();
-                }
-            },
-            _ => {}
-        }
+    fn window(&self) -> &Window {
+        &self.window
     }
 }
 
 fn main() {
-    tracing_subscriber::fmt::init();
-    let event_loop = EventLoop::new().unwrap();
-    let mut app = App::new();
-    event_loop.run_app(&mut app).unwrap();
+    common::run::<State>();
 }
