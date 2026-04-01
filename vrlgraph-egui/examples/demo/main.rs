@@ -104,8 +104,8 @@ impl State {
         let name = &mut self.name;
         let age = &mut self.age;
 
-        let output = self.egui_state.egui_ctx().run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let output = self.egui_state.egui_ctx().run_ui(input, |ctx| {
+            egui::CentralPanel::default().show_inside(ctx, |ui| {
                 ui.heading("vrlgraph-egui demo");
                 ui.separator();
                 ui.horizontal(|ui| {
