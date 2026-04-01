@@ -126,7 +126,6 @@ Textures are stored as persistent `R8G8B8A8_SRGB` images with `SAMPLED | TRANSFE
 
 - **Full uploads** create a new persistent image and upload the pixel data.
 - **Partial updates** write a sub-region to an existing image via `upload_to_image`.
-- **Font images** (coverage data) are converted to white pixels with varying alpha: `[255, 255, 255, (coverage * 255) as u8]`.
 - **Deferred deletion:** texture IDs from `textures_delta.free` are queued during `prepare` and actually destroyed on the next `prepare` call. This avoids destroying an image that may still be in flight on the GPU.
 
 ### Buffers

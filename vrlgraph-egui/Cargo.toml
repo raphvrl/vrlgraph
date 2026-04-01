@@ -8,7 +8,7 @@ repository = "https://github.com/raphvrl/vrlgraph"
 
 [dependencies]
 vrlgraph = { path = "../vrlgraph" }
-egui = "0.31"
+egui = "0.34.1"
 ash = "0.38.0"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 gpu-allocator = "0.28.0"
@@ -16,7 +16,7 @@ rustc-hash = "2.1.2"
 
 [dev-dependencies]
 winit = "0.30.13"
-egui-winit = "0.31"
+egui-winit = "0.34.1"
 
 [[example]]
 name = "demo"
