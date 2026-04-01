@@ -429,6 +429,23 @@ impl Cmd {
         };
     }
 
+    pub(crate) fn copy_buffer_to_image_region(
+        &self,
+        buffer: vk::Buffer,
+        image: vk::Image,
+        regions: &[vk::BufferImageCopy],
+    ) {
+        unsafe {
+            self.device.cmd_copy_buffer_to_image(
+                self.raw,
+                buffer,
+                image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                regions,
+            )
+        };
+    }
+
     pub(crate) fn pipeline_barrier2(&self, image_barriers: &[vk::ImageMemoryBarrier2]) {
         let dep_info = vk::DependencyInfo::default().image_memory_barriers(image_barriers);
         unsafe { self.device.cmd_pipeline_barrier2(self.raw, &dep_info) };

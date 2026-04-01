@@ -600,6 +600,99 @@ impl Graph {
         self.destroy_staging(staging);
         Ok(())
     }
+
+    pub fn upload_to_image(
+        &mut self,
+        image: Image,
+        data: &[u8],
+        offset: [u32; 2],
+        extent: [u32; 2],
+    ) -> Result<(), GraphError> {
+        let entry = &self.images[image.0 as usize];
+        let handle = entry.handle.expect("upload_to_image: image not allocated");
+        let old_layout = entry.layout;
+        let old_stage = entry.stage;
+        let old_access = entry.access;
+        let vk_img = self
+            .resources
+            .get_image(handle)
+            .expect("upload_to_image: image handle stale")
+            .raw;
+
+        let staging = self.create_staging(data, "staging_upload_sub")?;
+        let stg_buf = self
+            .resources
+            .get_buffer(staging)
+            .expect("buffer just created")
+            .raw;
+
+        let region = vk::BufferImageCopy::default()
+            .image_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .image_offset(vk::Offset3D {
+                x: offset[0] as i32,
+                y: offset[1] as i32,
+                z: 0,
+            })
+            .image_extent(vk::Extent3D {
+                width: extent[0],
+                height: extent[1],
+                depth: 1,
+            });
+
+        self.one_shot_submit(|cmd| {
+            cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(old_stage)
+                .src_access_mask(old_access)
+                .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                .old_layout(old_layout)
+                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(vk_img)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })]);
+
+            cmd.copy_buffer_to_image_region(stg_buf, vk_img, &[region]);
+
+            cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(vk_img)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })]);
+        })?;
+
+        self.destroy_staging(staging);
+
+        let entry = &mut self.images[image.0 as usize];
+        entry.layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+        entry.stage = vk::PipelineStageFlags2::FRAGMENT_SHADER;
+        entry.access = vk::AccessFlags2::SHADER_READ;
+
+        Ok(())
+    }
 }
 
 #[inline]

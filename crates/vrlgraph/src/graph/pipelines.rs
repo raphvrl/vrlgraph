@@ -54,6 +54,32 @@ impl Graph {
         Ok(ShaderModule(handle))
     }
 
+    pub fn shader_module_from_spirv(
+        &mut self,
+        spirv: &[u8],
+        entry: impl AsRef<str>,
+    ) -> Result<ShaderModule, GraphError> {
+        assert!(
+            spirv.len().is_multiple_of(4),
+            "SPIR-V byte slice length must be a multiple of 4"
+        );
+        let code: &[u32] =
+            unsafe { std::slice::from_raw_parts(spirv.as_ptr().cast(), spirv.len() / 4) };
+
+        let module = unsafe {
+            self.ash_device()
+                .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(code), None)
+        }?;
+
+        let entry =
+            CString::new(entry.as_ref()).expect("shader entry point must not contain null bytes");
+        let handle = self
+            .resources
+            .insert_shader_module(GpuShaderModule { module, entry });
+
+        Ok(ShaderModule(handle))
+    }
+
     /// Destroys a shader module handle. The underlying `ash::vk::ShaderModule` is shared via the
     /// path cache and will be freed when the graph is dropped.
     pub fn destroy_shader_module(&mut self, handle: ShaderModule) {

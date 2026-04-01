@@ -57,6 +57,17 @@ pub(super) fn sort_and_cull_passes(
         }
     }
 
+    for writers in image_writers.values() {
+        for pair in writers.windows(2) {
+            graph.add_edge(nodes[pair[0]], nodes[pair[1]], ());
+        }
+    }
+    for writers in buffer_writers.values() {
+        for pair in writers.windows(2) {
+            graph.add_edge(nodes[pair[0]], nodes[pair[1]], ());
+        }
+    }
+
     let mut live = vec![false; n];
 
     for (i, pass) in passes.iter().enumerate() {
