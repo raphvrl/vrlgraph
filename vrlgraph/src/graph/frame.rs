@@ -208,7 +208,10 @@ impl Graph {
 
     pub fn end_frame(&mut self, frame: Frame) -> Result<(), GraphError> {
         match self.execute_frame(frame) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.frame_active = false;
+                Ok(())
+            }
             Err(e) => {
                 self.cleanup_frame();
                 Err(e)
