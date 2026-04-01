@@ -2492,6 +2492,8 @@ dependencies = [
  "egui-winit",
  "gpu-allocator",
  "rustc-hash",
+ "tracing",
+ "tracing-subscriber",
  "vrlgraph",
  "winit",
 ]
