@@ -123,7 +123,13 @@ impl TransientCache {
             let usage = entry.usage | vk::ImageUsageFlags::TRANSFER_DST;
             slot_specs[slot] = Some(match slot_specs[slot].take() {
                 None => (entry.desc.clone(), usage, entry.aspect),
-                Some((desc, prev_u, prev_a)) => (desc, prev_u | usage, prev_a),
+                Some((mut desc, prev_u, prev_a)) => {
+                    desc.extent.width = desc.extent.width.max(entry.desc.extent.width);
+                    desc.extent.height = desc.extent.height.max(entry.desc.extent.height);
+                    desc.extent.depth = desc.extent.depth.max(entry.desc.extent.depth);
+                    desc.mip_levels = desc.mip_levels.max(entry.desc.mip_levels);
+                    (desc, prev_u | usage, prev_a)
+                }
             });
         }
 

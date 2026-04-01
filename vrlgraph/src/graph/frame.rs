@@ -5,8 +5,7 @@ use super::access::{Access, LoadOp};
 use super::barrier::{BarrierState, compute_barriers, compute_buffer_barriers};
 use super::command::Cmd;
 use super::dag;
-use super::image::Image;
-use super::image::ImageEntry;
+use super::image::{Image, ImageEntry, ImageOrigin};
 use super::pass::{
     BufferAccess, FrameResources, PassAccess, PassContext, ReadParam, RecordedPass, WithLayer,
     WithLayerLoadOp, WithLoadOp, WriteParam,
@@ -117,6 +116,11 @@ impl Graph {
     }
 
     pub fn begin_frame(&mut self) -> Result<Frame, GraphError> {
+        debug_assert!(
+            !self.frame_active,
+            "begin_frame called while a frame is already active (missing end_frame?)"
+        );
+
         let resized = if let Some((w, h)) = self.pending_resize.take() {
             self.apply_resize(w, h)?
         } else {
@@ -125,6 +129,7 @@ impl Graph {
 
         let idx = self.current;
         self.sync.wait(idx)?;
+        self.cleanup_frame();
 
         self.timestamps.last_timings.clear();
         if self.timestamps.is_enabled() && self.timestamps.written[idx] {
@@ -201,7 +206,17 @@ impl Graph {
         })
     }
 
-    pub fn end_frame(&mut self, _frame: Frame) -> Result<(), GraphError> {
+    pub fn end_frame(&mut self, frame: Frame) -> Result<(), GraphError> {
+        match self.execute_frame(frame) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.cleanup_frame();
+                Err(e)
+            }
+        }
+    }
+
+    fn execute_frame(&mut self, _frame: Frame) -> Result<(), GraphError> {
         let pending = std::mem::take(&mut self.pending_passes);
         let live_images = self.collect_live_images(&pending);
         let passes = dag::sort_and_cull_passes(pending, &live_images)
@@ -238,9 +253,15 @@ impl Graph {
             self.device.allocator_mut(),
         )?;
 
-        // Register transient images in the bindless table now that handles are assigned.
         for entry in &mut self.images[self.persistent_count..] {
-            let Some(handle) = entry.handle else { continue };
+            let Some(handle) = entry.handle else {
+                debug_assert!(
+                    entry.origin == ImageOrigin::External,
+                    "transient image '{}' has no GPU handle after allocation",
+                    entry.desc.label
+                );
+                continue;
+            };
             let Some(gpu_image) = self.resources.get_image(handle) else {
                 continue;
             };
@@ -532,11 +553,9 @@ impl Graph {
         ) {
             Ok(_) => {}
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                self.cleanup_frame();
                 return Err(GraphError::SwapchainOutOfDate);
             }
             Err(e) => {
-                self.cleanup_frame();
                 return Err(GraphError::Vulkan(e));
             }
         }
@@ -547,7 +566,6 @@ impl Graph {
             self.images[i].access = state.access;
         }
 
-        self.cleanup_frame();
         self.current = (self.current + 1) % self.frames.len();
         Ok(())
     }

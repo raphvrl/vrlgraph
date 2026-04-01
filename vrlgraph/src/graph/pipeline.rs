@@ -363,9 +363,17 @@ pub(super) fn resolve_shader_path(path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_owned();
     }
-    std::env::current_exe()
+    let exe_relative = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(path)))
+        .and_then(|exe| exe.parent().map(|dir| dir.join(path)));
+    if let Some(p) = &exe_relative {
+        if p.exists() {
+            return p.clone();
+        }
+    }
+    std::env::current_dir()
+        .ok()
+        .map(|dir| dir.join(path))
         .unwrap_or_else(|| path.to_owned())
 }
 
