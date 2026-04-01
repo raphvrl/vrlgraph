@@ -80,9 +80,17 @@ impl Graph {
         Ok(ShaderModule(handle))
     }
 
-    /// Destroys a shader module handle. The underlying `ash::vk::ShaderModule` is shared via the
-    /// path cache and will be freed when the graph is dropped.
+    /// Destroys a shader module handle. For file-backed modules the underlying
+    /// `VkShaderModule` is shared via the path cache and freed when the graph
+    /// is dropped. For SPIR-V byte-backed modules we are the sole owner, so
+    /// the Vulkan object is destroyed immediately.
     pub fn destroy_shader_module(&mut self, handle: ShaderModule) {
+        if let Some(m) = self.resources.get_shader_module(handle.0) {
+            let vk_module = m.module;
+            if !self.spirv_module_cache.values().any(|&c| c == vk_module) {
+                unsafe { self.ash_device().destroy_shader_module(vk_module, None) };
+            }
+        }
         self.resources.destroy_shader_module(handle.0);
         #[cfg(debug_assertions)]
         self.shader_module_paths.remove(&handle.0);
