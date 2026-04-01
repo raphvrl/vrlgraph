@@ -267,6 +267,10 @@ impl Graph {
         Ok(())
     }
 
+    pub fn frames_in_flight(&self) -> usize {
+        self.frames.len()
+    }
+
     /// Returns a reference to the underlying [`GpuDevice`].
     pub fn device(&self) -> &GpuDevice {
         &self.device

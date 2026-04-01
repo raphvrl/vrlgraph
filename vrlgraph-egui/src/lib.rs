@@ -1,5 +1,7 @@
 #![doc = include_str!("../README.md")]
 
+use std::collections::VecDeque;
+
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use gpu_allocator::MemoryLocation;
@@ -33,11 +35,11 @@ pub struct EguiRenderer {
     pipeline: Pipeline,
     sampler: Sampler,
     textures: FxHashMap<egui::TextureId, Image>,
-    pending_frees: Vec<egui::TextureId>,
-    vertex_buf: Buffer,
-    index_buf: Buffer,
-    vertex_capacity: u64,
-    index_capacity: u64,
+    pending_frees: VecDeque<Vec<egui::TextureId>>,
+    vertex_bufs: Vec<Buffer>,
+    index_bufs: Vec<Buffer>,
+    vertex_capacities: Vec<u64>,
+    index_capacities: Vec<u64>,
     vertices: Vec<EguiVertex>,
     indices: Vec<u32>,
     draw_calls: Vec<DrawCall>,
@@ -64,29 +66,34 @@ impl EguiRenderer {
             .address_mode(AddressMode::CLAMP_TO_EDGE)
             .build()?;
 
-        let vertex_buf = graph.create_buffer(&BufferDesc {
-            size: INITIAL_VERTEX_BYTES,
-            usage: vk::BufferUsageFlags::VERTEX_BUFFER,
-            location: MemoryLocation::CpuToGpu,
-            label: "egui_vertices".into(),
-        })?;
+        let n = graph.frames_in_flight();
 
-        let index_buf = graph.create_buffer(&BufferDesc {
-            size: INITIAL_INDEX_BYTES,
-            usage: vk::BufferUsageFlags::INDEX_BUFFER,
-            location: MemoryLocation::CpuToGpu,
-            label: "egui_indices".into(),
-        })?;
+        let mut vertex_bufs = Vec::with_capacity(n);
+        let mut index_bufs = Vec::with_capacity(n);
+        for i in 0..n {
+            vertex_bufs.push(graph.create_buffer(&BufferDesc {
+                size: INITIAL_VERTEX_BYTES,
+                usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+                location: MemoryLocation::CpuToGpu,
+                label: format!("egui_vertices_{i}"),
+            })?);
+            index_bufs.push(graph.create_buffer(&BufferDesc {
+                size: INITIAL_INDEX_BYTES,
+                usage: vk::BufferUsageFlags::INDEX_BUFFER,
+                location: MemoryLocation::CpuToGpu,
+                label: format!("egui_indices_{i}"),
+            })?);
+        }
 
         Ok(Self {
             pipeline,
             sampler,
             textures: FxHashMap::default(),
-            pending_frees: Vec::new(),
-            vertex_buf,
-            index_buf,
-            vertex_capacity: INITIAL_VERTEX_BYTES,
-            index_capacity: INITIAL_INDEX_BYTES,
+            pending_frees: (0..n).map(|_| Vec::new()).collect(),
+            vertex_bufs,
+            index_bufs,
+            vertex_capacities: vec![INITIAL_VERTEX_BYTES; n],
+            index_capacities: vec![INITIAL_INDEX_BYTES; n],
             vertices: Vec::new(),
             indices: Vec::new(),
             draw_calls: Vec::new(),
@@ -99,16 +106,22 @@ impl EguiRenderer {
         graph: &mut Graph,
         textures_delta: &egui::TexturesDelta,
     ) -> Result<(), GraphError> {
-        for id in self.pending_frees.drain(..) {
-            if let Some(tex) = self.textures.remove(&id) {
-                graph.destroy_image(tex);
+        if let Some(to_free) = self.pending_frees.pop_front() {
+            for id in to_free {
+                if let Some(tex) = self.textures.remove(&id) {
+                    graph.destroy_image(tex);
+                }
             }
         }
+        self.pending_frees.push_back(Vec::new());
+
         for (id, delta) in &textures_delta.set {
             self.apply_texture_delta(graph, *id, delta)?;
         }
-        self.pending_frees
-            .extend(textures_delta.free.iter().copied());
+
+        if let Some(back) = self.pending_frees.back_mut() {
+            back.extend(textures_delta.free.iter().copied());
+        }
         Ok(())
     }
 
@@ -125,18 +138,19 @@ impl EguiRenderer {
             return Ok(());
         }
 
+        let fi = frame.index as usize;
         let vertex_byte_len = (self.vertices.len() * size_of::<EguiVertex>()) as u64;
         let index_byte_len = (self.indices.len() * size_of::<u32>()) as u64;
 
-        self.ensure_buffer_capacity(graph, vertex_byte_len, index_byte_len)?;
+        self.ensure_buffer_capacity(graph, fi, vertex_byte_len, index_byte_len)?;
 
-        graph.write_buffer(self.vertex_buf, &self.vertices);
-        graph.write_buffer(self.index_buf, &self.indices);
+        graph.write_buffer(self.vertex_bufs[fi], &self.vertices);
+        graph.write_buffer(self.index_bufs[fi], &self.indices);
 
         let pipeline = self.pipeline;
         let sampler = self.sampler;
-        let vertex_buf = self.vertex_buf;
-        let index_buf = self.index_buf;
+        let vertex_buf = self.vertex_bufs[fi];
+        let index_buf = self.index_bufs[fi];
         let screen_size = [
             frame.extent.width as f32 / pixels_per_point,
             frame.extent.height as f32 / pixels_per_point,
@@ -244,16 +258,22 @@ impl EguiRenderer {
     }
 
     pub fn destroy(mut self, graph: &mut Graph) {
-        for id in self.pending_frees.drain(..) {
-            if let Some(tex) = self.textures.remove(&id) {
-                graph.destroy_image(tex);
+        for frees in &mut self.pending_frees {
+            for id in frees.drain(..) {
+                if let Some(tex) = self.textures.remove(&id) {
+                    graph.destroy_image(tex);
+                }
             }
         }
         for (_, tex) in self.textures.drain() {
             graph.destroy_image(tex);
         }
-        graph.destroy_buffer(self.vertex_buf);
-        graph.destroy_buffer(self.index_buf);
+        for &buf in &self.vertex_bufs {
+            graph.destroy_buffer(buf);
+        }
+        for &buf in &self.index_bufs {
+            graph.destroy_buffer(buf);
+        }
         graph.destroy_pipeline(self.pipeline);
         graph.destroy_sampler(self.sampler);
     }
@@ -347,31 +367,32 @@ impl EguiRenderer {
     fn ensure_buffer_capacity(
         &mut self,
         graph: &mut Graph,
+        fi: usize,
         vertex_bytes: u64,
         index_bytes: u64,
     ) -> Result<(), GraphError> {
-        if vertex_bytes > self.vertex_capacity {
-            graph.destroy_buffer(self.vertex_buf);
+        if vertex_bytes > self.vertex_capacities[fi] {
+            graph.destroy_buffer(self.vertex_bufs[fi]);
             let new_cap = vertex_bytes.next_power_of_two();
-            self.vertex_buf = graph.create_buffer(&BufferDesc {
+            self.vertex_bufs[fi] = graph.create_buffer(&BufferDesc {
                 size: new_cap,
                 usage: vk::BufferUsageFlags::VERTEX_BUFFER,
                 location: MemoryLocation::CpuToGpu,
-                label: "egui_vertices".into(),
+                label: format!("egui_vertices_{fi}"),
             })?;
-            self.vertex_capacity = new_cap;
+            self.vertex_capacities[fi] = new_cap;
         }
 
-        if index_bytes > self.index_capacity {
-            graph.destroy_buffer(self.index_buf);
+        if index_bytes > self.index_capacities[fi] {
+            graph.destroy_buffer(self.index_bufs[fi]);
             let new_cap = index_bytes.next_power_of_two();
-            self.index_buf = graph.create_buffer(&BufferDesc {
+            self.index_bufs[fi] = graph.create_buffer(&BufferDesc {
                 size: new_cap,
                 usage: vk::BufferUsageFlags::INDEX_BUFFER,
                 location: MemoryLocation::CpuToGpu,
-                label: "egui_indices".into(),
+                label: format!("egui_indices_{fi}"),
             })?;
-            self.index_capacity = new_cap;
+            self.index_capacities[fi] = new_cap;
         }
 
         Ok(())
