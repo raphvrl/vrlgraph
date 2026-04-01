@@ -42,7 +42,7 @@ use pass::RecordedPass;
 use query::TimestampState;
 #[cfg(debug_assertions)]
 use reload::{PipelineDesc, ShaderWatcher};
-use resources::{free_bindless, update_bindless};
+use resources::update_bindless;
 use sync::{FrameSync, SyncError};
 use transient::TransientCache;
 
@@ -116,8 +116,41 @@ pub struct Frame {
     pub resized: bool,
 }
 
+#[derive(Default)]
+pub(crate) struct DeferredBindlessFrees {
+    sampled: Vec<BindlessIndex<Sampled>>,
+    storage: Vec<BindlessIndex<Storage>>,
+    cubemap: Vec<BindlessIndex<Cubemap>>,
+    array: Vec<BindlessIndex<Array2D>>,
+}
+
+impl DeferredBindlessFrees {
+    pub fn drain_into(&mut self, bindless: &mut BindlessDescriptorTable) {
+        for idx in self.sampled.drain(..) {
+            bindless.free_sampled(idx);
+        }
+        for idx in self.storage.drain(..) {
+            bindless.free_storage(idx);
+        }
+        for idx in self.cubemap.drain(..) {
+            bindless.free_cubemap(idx);
+        }
+        for idx in self.array.drain(..) {
+            bindless.free_array(idx);
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sampled.is_empty()
+            && self.storage.is_empty()
+            && self.cubemap.is_empty()
+            && self.array.is_empty()
+    }
+}
+
 pub(crate) struct FrameData {
     pool: CommandPool,
+    pub(crate) deferred_frees: DeferredBindlessFrees,
 }
 
 /// The render graph.
@@ -204,6 +237,7 @@ impl Graph {
             .map(|_| {
                 Ok(FrameData {
                     pool: CommandPool::new(device.ash_device(), device.graphics_family())?,
+                    deferred_frees: DeferredBindlessFrees::default(),
                 })
             })
             .collect::<Result<Vec<_>, CommandError>>()?;
@@ -405,8 +439,20 @@ impl Graph {
     }
 
     pub(in crate::graph) fn cleanup_frame(&mut self) {
+        let deferred = &mut self.frames[self.frame_index].deferred_frees;
         for entry in &mut self.images[self.persistent_count..] {
-            free_bindless(entry, &mut self.bindless);
+            if let Some(idx) = entry.sampled_index.take() {
+                deferred.sampled.push(idx);
+            }
+            if let Some(idx) = entry.storage_index.take() {
+                deferred.storage.push(idx);
+            }
+            if let Some(idx) = entry.cubemap_index.take() {
+                deferred.cubemap.push(idx);
+            }
+            if let Some(idx) = entry.array_index.take() {
+                deferred.array.push(idx);
+            }
         }
         self.images.truncate(self.persistent_count);
         self.frame_active = false;
@@ -443,6 +489,9 @@ impl Drop for Graph {
             unsafe { device.destroy_shader_module(module, None) };
         }
         self.resources.drain_samplers(&device);
+        for frame in &mut self.frames {
+            frame.deferred_frees.drain_into(&mut self.bindless);
+        }
         self.bindless.destroy();
         let alloc = self.device.allocator_mut();
         self.transient_cache
@@ -452,5 +501,30 @@ impl Drop for Graph {
                 self.resources.destroy_image(&device, alloc, h);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bindless::BindlessIndex;
+    use super::{DeferredBindlessFrees, Sampled, Storage};
+
+    #[test]
+    fn deferred_default_is_empty() {
+        let d = DeferredBindlessFrees::default();
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn deferred_collects_indices() {
+        let mut d = DeferredBindlessFrees::default();
+        d.sampled.push(BindlessIndex::<Sampled>::new(5));
+        d.sampled.push(BindlessIndex::<Sampled>::new(12));
+        d.storage.push(BindlessIndex::<Storage>::new(3));
+        assert!(!d.is_empty());
+        assert_eq!(d.sampled.len(), 2);
+        assert_eq!(d.storage.len(), 1);
+        assert!(d.cubemap.is_empty());
+        assert!(d.array.is_empty());
     }
 }

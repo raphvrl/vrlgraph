@@ -181,3 +181,127 @@ impl TransientCache {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ash::vk;
+
+    use super::*;
+    use crate::graph::access::LoadOp;
+    use crate::graph::image::{Image, ImageEntry};
+    use crate::graph::pass::{PassAccess, RecordedPass};
+
+    fn img_access(id: u32) -> PassAccess {
+        PassAccess {
+            image: Image(id),
+            layout: vk::ImageLayout::UNDEFINED,
+            stage: vk::PipelineStageFlags2::empty(),
+            access: vk::AccessFlags2::empty(),
+            is_color: false,
+            is_depth: false,
+            load_op: LoadOp::Auto,
+            layer: None,
+            clear_color: None,
+        }
+    }
+
+    fn make_pass(name: &'static str, write_ids: &[u32], read_ids: &[u32]) -> RecordedPass {
+        RecordedPass {
+            name,
+            reads: read_ids.iter().copied().map(img_access).collect(),
+            writes: write_ids.iter().copied().map(img_access).collect(),
+            buffer_reads: vec![],
+            buffer_writes: vec![],
+            view_mask: 0,
+            execute: Box::new(|_, _| {}),
+        }
+    }
+
+    fn transient_entry() -> ImageEntry {
+        ImageEntry::transient(ImageDesc::default())
+    }
+
+    fn persistent_entry() -> ImageEntry {
+        ImageEntry::persistent(ImageDesc::default())
+    }
+
+    fn external_entry() -> ImageEntry {
+        ImageEntry::external(
+            vk::Image::null(),
+            vk::ImageView::null(),
+            vk::Extent2D { width: 1, height: 1 },
+        )
+    }
+
+    #[test]
+    fn lifetimes_basic() {
+        let images = vec![
+            persistent_entry(),
+            transient_entry(),
+            transient_entry(),
+            transient_entry(),
+        ];
+        let passes = vec![
+            make_pass("geo", &[1, 2, 3], &[]),
+            make_pass("light", &[], &[1, 2, 3]),
+        ];
+        let lt = compute_lifetimes(&passes, &images, 1);
+        assert_eq!(lt[0], None);
+        assert_eq!(lt[1], Some((0, 1)));
+        assert_eq!(lt[2], Some((0, 1)));
+        assert_eq!(lt[3], Some((0, 1)));
+    }
+
+    #[test]
+    fn lifetimes_skips_persistent() {
+        let images = vec![persistent_entry(), transient_entry()];
+        let passes = vec![make_pass("p", &[0, 1], &[])];
+        let lt = compute_lifetimes(&passes, &images, 1);
+        assert_eq!(lt[0], None);
+        assert_eq!(lt[1], Some((0, 0)));
+    }
+
+    #[test]
+    fn lifetimes_skips_external() {
+        let images = vec![persistent_entry(), external_entry()];
+        let passes = vec![make_pass("p", &[1], &[])];
+        let lt = compute_lifetimes(&passes, &images, 0);
+        assert_eq!(lt[1], None);
+    }
+
+    #[test]
+    fn lifetimes_unused_transient() {
+        let images = vec![persistent_entry(), transient_entry(), transient_entry()];
+        let passes = vec![make_pass("p", &[1], &[])];
+        let lt = compute_lifetimes(&passes, &images, 1);
+        assert_eq!(lt[1], Some((0, 0)));
+        assert_eq!(lt[2], None);
+    }
+
+    #[test]
+    fn slots_overlapping_separate() {
+        let lifetimes = vec![None, Some((0, 1)), Some((0, 1))];
+        let (assignments, count) = assign_slots(&lifetimes);
+        assert_eq!(count, 2);
+        assert_ne!(assignments[1], assignments[2]);
+    }
+
+    #[test]
+    fn slots_non_overlapping_share() {
+        let lifetimes = vec![None, Some((0, 0)), Some((1, 1))];
+        let (assignments, count) = assign_slots(&lifetimes);
+        assert_eq!(count, 1);
+        assert_eq!(assignments[1], Some(0));
+        assert_eq!(assignments[2], Some(0));
+    }
+
+    #[test]
+    fn slots_chain_reuses() {
+        let lifetimes = vec![None, Some((0, 0)), Some((1, 1)), Some((2, 2))];
+        let (assignments, count) = assign_slots(&lifetimes);
+        assert_eq!(count, 1);
+        assert_eq!(assignments[1], Some(0));
+        assert_eq!(assignments[2], Some(0));
+        assert_eq!(assignments[3], Some(0));
+    }
+}

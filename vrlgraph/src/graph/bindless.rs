@@ -32,7 +32,7 @@ pub struct Array2D;
 pub struct BindlessIndex<K>(u32, PhantomData<K>);
 
 impl<K> BindlessIndex<K> {
-    fn new(index: u32) -> Self {
+    pub(crate) fn new(index: u32) -> Self {
         Self(index, PhantomData)
     }
 

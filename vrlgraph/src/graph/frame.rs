@@ -129,6 +129,7 @@ impl Graph {
 
         let idx = self.current;
         self.sync.wait(idx)?;
+        self.frames[idx].deferred_frees.drain_into(&mut self.bindless);
         self.cleanup_frame();
 
         self.timestamps.last_timings.clear();
