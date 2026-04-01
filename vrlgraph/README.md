@@ -272,10 +272,9 @@ let gbuffer_albedo = graph.transient_image()
 Persistent images survive across frames and must be destroyed manually. Use them for render targets you allocate once at startup (shadow maps, lookup tables, etc.).
 
 ```rust,ignore
-let shadow_atlas = graph.persistent_image()
+let shadow_atlas = graph.persistent_image("shadow_atlas")
     .format(vk::Format::D32_SFLOAT)
     .extent(4096, 4096)
-    .label("shadow_atlas")
     .build()?;
 
 // later, when no longer needed — also frees any bindless slots
@@ -287,20 +286,24 @@ graph.destroy_image(shadow_atlas);
 Resizable images are persistent images that are automatically recreated when the window is resized. Call `.resizable()` on a persistent image builder. The extent defaults to the swapchain size.
 
 ```rust,ignore
-let hdr_buffer = graph.persistent_image()
+let hdr_buffer = graph.persistent_image("hdr_buffer")
     .format(vk::Format::R16G16B16A16_SFLOAT)
     .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)
-    .label("hdr_buffer")
     .resizable()
     .build()?;
 ```
 
 ### Textures
 
-`load_texture` decodes a PNG or JPEG file and uploads it to a GPU image. The image is persistent.
+`load_texture` creates a persistent GPU image from raw pixel data and uploads it with automatic mipmap generation.
+The caller is responsible for image decoding (e.g. via the `image` or `stb_image` crate).
 
 ```rust,ignore
-let albedo = graph.load_texture("assets/wood_albedo.png")?;
+let albedo = graph.load_texture("wood_albedo")
+    .pixels(&rgba_pixels)
+    .extent(width, height)
+    .format(vk::Format::R8G8B8A8_SRGB)
+    .build()?;
 ```
 
 ### Image builder methods
@@ -315,9 +318,19 @@ let albedo = graph.load_texture("assets/wood_albedo.png")?;
 | `.array_2d(layers)` | no | `Image2D` | 2D array image |
 | `.cubemap()` | no | `Image2D` | Cubemap image |
 | `.cubemap_array(count)` | no | `Image2D` | Cubemap array image |
-| `.label(impl Into<String>)` | no | `""` | Debug name |
 | `.usage(vk::ImageUsageFlags)` | no | empty | Additional Vulkan usage flags |
 | `.resizable()` | no | `false` | Auto-recreate on window resize (persistent only) |
+
+The label is provided as the first argument to `persistent_image(label)` and `load_texture(label)`.
+
+### Texture builder methods
+
+| Method | Required | Default | Description |
+|---|---|---|---|
+| `.pixels(&[u8])` | yes | — | Raw pixel data |
+| `.extent(w, h)` | yes | — | Width and height |
+| `.format(vk::Format)` | yes | — | Pixel format |
+| `.mip_levels(u32)` | no | auto | Number of mip levels (0 = auto from extent) |
 
 **Important with bindless:** set `SAMPLED` and/or `STORAGE` explicitly in `.usage()` if you need to access the image by bindless index. The graph infers other usage flags (attachment, transfer) from pass accesses, but `SAMPLED`/`STORAGE` must be declared upfront so the bindless slot is allocated at creation time. Transient images are an exception — their usage is inferred from passes before slot allocation.
 

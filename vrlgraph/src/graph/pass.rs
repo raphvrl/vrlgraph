@@ -369,7 +369,7 @@ impl<'a> FrameResources<'a> {
     /// Returns the bindless sampled image index as a `u32` ready for push constants.
     ///
     /// The image must have been created with `SAMPLED` usage (e.g. via
-    /// [`Graph::load_texture`](crate::graph::Graph::load_texture) or with
+    /// [`Graph::load_texture`](crate::graph::Graph::load_texture) builder or with
     /// `ash::vk::ImageUsageFlags::SAMPLED`).
     pub fn sampled_index(&self, handle: Image) -> u32 {
         self.images[handle.0 as usize]

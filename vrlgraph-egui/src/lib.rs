@@ -300,11 +300,10 @@ impl EguiRenderer {
             }
 
             let image = graph
-                .persistent_image()
+                .persistent_image(format!("egui_tex_{id:?}"))
                 .format(vk::Format::R8G8B8A8_SRGB)
                 .extent(w as u32, h as u32)
                 .usage(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)
-                .label(format!("egui_tex_{id:?}"))
                 .build()?;
 
             graph.upload_to_image(image, &pixels, [0, 0], [w as u32, h as u32])?;

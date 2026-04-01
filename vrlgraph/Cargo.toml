@@ -29,11 +29,6 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 notify = "8.2.0"
 
-image = { version = "0.25.10", default-features = false, features = [
-  "png",
-  "jpeg",
-] }
-
 glam = { version = "0.32.1", optional = true, features = ["bytemuck"] }
 vrlgraph-derive = { path = "derive" }
 

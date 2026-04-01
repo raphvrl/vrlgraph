@@ -46,7 +46,7 @@ use resources::{free_bindless, update_bindless};
 use sync::{FrameSync, SyncError};
 use transient::TransientCache;
 
-pub use self::image::Image;
+pub use self::image::{Image, TextureBuilder};
 pub use crate::resource::StreamingBufferHandle;
 pub use access::{Access, BufferUsage, LoadOp};
 pub use bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Sampler, Storage};
@@ -81,9 +81,6 @@ pub enum GraphError {
     /// A raw Vulkan call returned an error code.
     #[error("Vulkan error: {0}")]
     Vulkan(#[from] vk::Result),
-    /// A texture file could not be read or decoded.
-    #[error("Image load error: {0}")]
-    ImageLoad(String),
     /// A SPIR-V file could not be read or is malformed.
     #[error("Shader load error: {0}")]
     ShaderLoad(String),

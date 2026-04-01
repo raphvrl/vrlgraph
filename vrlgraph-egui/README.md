@@ -187,7 +187,7 @@ Each draw call sets a scissor rectangle derived from egui's `clip_rect`, scaled 
 
 A full integration example using `winit 0.30` and `egui-winit 0.31` is provided in `examples/demo/main.rs`:
 
-```
+```shell
 cargo run -p vrlgraph-egui --example demo
 ```
 

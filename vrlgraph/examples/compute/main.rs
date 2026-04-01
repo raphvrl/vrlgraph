@@ -39,10 +39,9 @@ impl common::Example for State {
             .build()?;
 
         let storage_image = graph
-            .persistent_image()
+            .persistent_image("triangle_storage")
             .format(vk::Format::R8G8B8A8_UNORM)
             .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED)
-            .label("triangle_storage")
             .resizable()
             .build()?;
 

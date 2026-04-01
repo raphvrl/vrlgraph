@@ -1,14 +1,12 @@
-use std::path::Path;
-
 use ash::vk;
 use gpu_allocator::MemoryLocation;
 
 use super::bindless::{BindlessDescriptorTable, Sampler};
 use super::command::{Cmd, CommandPool};
-use super::image::{Image, ImageBuilder, ImageEntry, ImageOrigin};
+use super::image::{Image, ImageBuilder, ImageEntry, ImageOrigin, TextureBuilder};
 use super::{Graph, GraphError};
 use crate::resource::{
-    Buffer, BufferDesc, GpuBuffer, ImageDesc, ImageHandle, ImageKind, ResourceError,
+    Buffer, BufferDesc, GpuBuffer, ImageHandle, ImageKind, ResourceError,
     StreamingBufferHandle,
 };
 
@@ -86,73 +84,12 @@ impl Graph {
         ImageBuilder::new(self, ImageOrigin::Transient)
     }
 
-    pub fn persistent_image(&mut self) -> ImageBuilder<'_> {
-        ImageBuilder::new(self, ImageOrigin::Persistent)
+    pub fn persistent_image(&mut self, label: impl Into<String>) -> ImageBuilder<'_> {
+        ImageBuilder::new(self, ImageOrigin::Persistent).label(label)
     }
 
-    pub fn load_texture(&mut self, path: impl AsRef<Path>) -> Result<Image, GraphError> {
-        self.load_texture_with(path, ImageDesc::default())
-    }
-
-    pub(crate) fn load_texture_with(
-        &mut self,
-        path: impl AsRef<Path>,
-        mut desc: ImageDesc,
-    ) -> Result<Image, GraphError> {
-        assert!(
-            !self.frame_active,
-            "load_texture() must be called outside the frame loop"
-        );
-
-        let path = path.as_ref();
-
-        let img = image::open(path)
-            .map_err(|e| GraphError::ImageLoad(e.to_string()))?
-            .to_rgba8();
-
-        let (width, height) = img.dimensions();
-        let pixels = img.into_raw();
-
-        desc.extent = vk::Extent3D {
-            width,
-            height,
-            depth: 1,
-        };
-        if desc.label.is_empty() {
-            desc.label = path.to_string_lossy().into_owned();
-        }
-
-        if desc.mip_levels == 0 {
-            desc.mip_levels = compute_mip_levels(width, height);
-        }
-
-        let usage = vk::ImageUsageFlags::SAMPLED
-            | vk::ImageUsageFlags::TRANSFER_DST
-            | vk::ImageUsageFlags::TRANSFER_SRC;
-        let aspect = vk::ImageAspectFlags::COLOR;
-
-        let device = self.device.ash_device().clone();
-        let handle = self.resources.create_image(
-            &device,
-            self.device.allocator_mut(),
-            &desc,
-            usage,
-            aspect,
-        )?;
-
-        self.upload_image_data(handle, &pixels, desc.extent, desc.mip_levels)?;
-
-        let view = self
-            .resources
-            .get_image(handle)
-            .expect("image just created")
-            .view;
-        let h = Image(self.images.len() as u32);
-        let mut entry = ImageEntry::loaded(desc, handle);
-        register_bindless(&mut entry, &mut self.bindless, view);
-        self.images.push(entry);
-        self.persistent_count += 1;
-        Ok(h)
+    pub fn load_texture(&mut self, label: impl Into<String>) -> TextureBuilder<'_> {
+        TextureBuilder::new(self, label.into())
     }
 
     pub fn destroy_image(&mut self, handle: Image) {
@@ -695,7 +632,3 @@ impl Graph {
     }
 }
 
-#[inline]
-fn compute_mip_levels(width: u32, height: u32) -> u32 {
-    (width.max(height) as f32).log2().floor() as u32 + 1
-}

@@ -936,8 +936,6 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
- "zune-core",
- "zune-jpeg",
 ]
 
 [[package]]
@@ -2459,7 +2457,6 @@ dependencies = [
  "bytemuck",
  "glam",
  "gpu-allocator",
- "image",
  "notify",
  "petgraph",
  "raw-window-handle",

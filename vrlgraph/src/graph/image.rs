@@ -325,8 +325,121 @@ impl<'g> ImageBuilder<'g> {
     }
 }
 
+pub struct TextureBuilder<'g> {
+    graph: &'g mut Graph,
+    label: String,
+    pixels: Option<&'g [u8]>,
+    width: Option<u32>,
+    height: Option<u32>,
+    format: Option<vk::Format>,
+    mip_levels: u32,
+}
+
+impl<'g> TextureBuilder<'g> {
+    pub(super) fn new(graph: &'g mut Graph, label: String) -> Self {
+        Self {
+            graph,
+            label,
+            pixels: None,
+            width: None,
+            height: None,
+            format: None,
+            mip_levels: 0,
+        }
+    }
+
+    pub fn pixels(mut self, data: &'g [u8]) -> Self {
+        self.pixels = Some(data);
+        self
+    }
+
+    pub fn extent(mut self, width: u32, height: u32) -> Self {
+        self.width = Some(width);
+        self.height = Some(height);
+        self
+    }
+
+    pub fn format(mut self, format: vk::Format) -> Self {
+        self.format = Some(format);
+        self
+    }
+
+    pub fn mip_levels(mut self, levels: u32) -> Self {
+        self.mip_levels = levels;
+        self
+    }
+
+    pub fn build(self) -> Result<Image, GraphError> {
+        assert!(
+            !self.graph.frame_active,
+            "load_texture().build() must be called outside the frame loop"
+        );
+
+        let pixels = self.pixels.expect("TextureBuilder: pixels() is required");
+        let width = self.width.expect("TextureBuilder: extent() is required");
+        let height = self.height.expect("TextureBuilder: extent() is required");
+        let format = self.format.expect("TextureBuilder: format() is required");
+
+        let mip_levels = if self.mip_levels == 0 {
+            compute_mip_levels(width, height)
+        } else {
+            self.mip_levels
+        };
+
+        let extent = vk::Extent3D {
+            width,
+            height,
+            depth: 1,
+        };
+        let desc = ImageDesc {
+            extent,
+            format,
+            mip_levels,
+            samples: SampleCount::S1,
+            kind: ImageKind::Image2D,
+            label: self.label,
+            usage: vk::ImageUsageFlags::empty(),
+        };
+
+        let usage = vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_DST
+            | vk::ImageUsageFlags::TRANSFER_SRC;
+        let aspect = vk::ImageAspectFlags::COLOR;
+
+        let device = self.graph.device.ash_device().clone();
+        let handle = self.graph.resources.create_image(
+            &device,
+            self.graph.device.allocator_mut(),
+            &desc,
+            usage,
+            aspect,
+        )?;
+
+        self.graph
+            .upload_image_data(handle, pixels, extent, mip_levels)?;
+
+        let view = self
+            .graph
+            .resources
+            .get_image(handle)
+            .expect("image just created")
+            .view;
+        let h = Image(self.graph.images.len() as u32);
+        let mut entry = ImageEntry::loaded(desc, handle);
+        register_bindless(&mut entry, &mut self.graph.bindless, view);
+        self.graph.images.push(entry);
+        self.graph.persistent_count += 1;
+        Ok(h)
+    }
+}
+
 pub(crate) struct ResizableTemplate {
     pub desc: ImageDesc,
+}
+
+#[inline]
+pub(crate) fn compute_mip_levels(width: u32, height: u32) -> u32 {
+    (width.max(height) as f32).log2().floor() as u32 + 1
 }
 
 #[cfg(test)]
