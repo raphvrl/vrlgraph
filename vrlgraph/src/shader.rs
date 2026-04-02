@@ -2,11 +2,16 @@
 /// using **scalar layout** (`VK_EXT_scalar_block_layout`).
 ///
 /// Each type is aligned to the size of its scalar component (4 bytes for
-/// `f32`/`u32`/`i32`, 8 bytes for `u64`). This matches the layout produced by
-/// Slang/SPIR-V for buffer references (BDA) and push constants.
+/// `f32`/`u32`/`i32`, 8 bytes for `f64`/`u64`/`i64`, 2 bytes for `u16`/`i16`).
+/// This matches the layout produced by Slang/SPIR-V for buffer references (BDA)
+/// and push constants.
 ///
 /// All standard scalar, vector and matrix types implement this trait. Enable the
 /// `glam` feature for `glam` type support.
+///
+/// A **blanket implementation** is provided for `[T; N]` where `T: ShaderType`,
+/// so any fixed-size array of a supported type is automatically supported
+/// (including nested arrays like `[[f32; 4]; 4]` for mat4).
 ///
 /// Derive this trait with `#[derive(ShaderType)]` on a struct to automatically
 /// generate `Clone`, `Copy`, and a [`write_padded`](ShaderType::write_padded)
@@ -26,13 +31,8 @@
 /// cmd.push_shader(&cam);
 /// ```
 pub trait ShaderType {
-    /// Size of this type in bytes after padding has been applied.
     const PADDED_SIZE: usize;
 
-    /// Write this value into `dst` with the correct GPU layout padding.
-    ///
-    /// `dst` must be at least [`PADDED_SIZE`](ShaderType::PADDED_SIZE) bytes.
-    /// Bytes beyond the data are left untouched (caller should zero-init).
     fn write_padded(&self, dst: &mut [u8]);
 }
 
@@ -53,23 +53,26 @@ macro_rules! impl_shader_type_pod {
     };
 }
 
-impl_shader_type_pod!(
-    f32,
-    u32,
-    i32,
-    u64,
-    [f32; 2],
-    [f32; 3],
-    [f32; 4],
-    [u32; 2],
-    [u32; 3],
-    [u32; 4],
-    [i32; 2],
-    [i32; 3],
-    [i32; 4],
-    [[f32; 4]; 4],
-    [[f32; 4]; 3]
-);
+impl_shader_type_pod!(f32, u32, i32, u64, f64, i64, u16, i16);
+
+impl ShaderType for bool {
+    const PADDED_SIZE: usize = 4;
+
+    fn write_padded(&self, dst: &mut [u8]) {
+        let v: u32 = if *self { 1 } else { 0 };
+        dst[..4].copy_from_slice(&v.to_le_bytes());
+    }
+}
+
+impl<T: ShaderType, const N: usize> ShaderType for [T; N] {
+    const PADDED_SIZE: usize = T::PADDED_SIZE * N;
+
+    fn write_padded(&self, dst: &mut [u8]) {
+        for (i, elem) in self.iter().enumerate() {
+            elem.write_padded(&mut dst[i * T::PADDED_SIZE..]);
+        }
+    }
+}
 
 #[cfg(feature = "glam")]
 mod glam_impls {
@@ -86,7 +89,25 @@ mod glam_impls {
         glam::IVec2,
         glam::IVec3,
         glam::IVec4,
-        glam::Mat4
+        glam::Mat2,
+        glam::Mat4,
+        glam::DVec2,
+        glam::DVec3,
+        glam::DVec4,
+        glam::DMat2,
+        glam::DMat4,
+        glam::U64Vec2,
+        glam::U64Vec3,
+        glam::U64Vec4,
+        glam::I64Vec2,
+        glam::I64Vec3,
+        glam::I64Vec4,
+        glam::U16Vec2,
+        glam::U16Vec3,
+        glam::U16Vec4,
+        glam::I16Vec2,
+        glam::I16Vec3,
+        glam::I16Vec4
     );
 
     impl ShaderType for glam::Mat3 {
@@ -98,6 +119,50 @@ mod glam_impls {
                 let off = i * 12;
                 dst[off..off + 12].copy_from_slice(bytemuck::cast_slice(col));
             }
+        }
+    }
+
+    impl ShaderType for glam::DMat3 {
+        const PADDED_SIZE: usize = 72;
+
+        fn write_padded(&self, dst: &mut [u8]) {
+            let cols = self.to_cols_array_2d();
+            for (i, col) in cols.iter().enumerate() {
+                let off = i * 24;
+                dst[off..off + 24].copy_from_slice(bytemuck::cast_slice(col));
+            }
+        }
+    }
+
+    impl ShaderType for glam::BVec2 {
+        const PADDED_SIZE: usize = 8;
+
+        fn write_padded(&self, dst: &mut [u8]) {
+            let arr: [u32; 2] = [self.x as u32, self.y as u32];
+            dst[..8].copy_from_slice(bytemuck::cast_slice(&arr));
+        }
+    }
+
+    impl ShaderType for glam::BVec3 {
+        const PADDED_SIZE: usize = 12;
+
+        fn write_padded(&self, dst: &mut [u8]) {
+            let arr: [u32; 3] = [self.x as u32, self.y as u32, self.z as u32];
+            dst[..12].copy_from_slice(bytemuck::cast_slice(&arr));
+        }
+    }
+
+    impl ShaderType for glam::BVec4 {
+        const PADDED_SIZE: usize = 16;
+
+        fn write_padded(&self, dst: &mut [u8]) {
+            let arr: [u32; 4] = [
+                self.x as u32,
+                self.y as u32,
+                self.z as u32,
+                self.w as u32,
+            ];
+            dst[..16].copy_from_slice(bytemuck::cast_slice(&arr));
         }
     }
 }

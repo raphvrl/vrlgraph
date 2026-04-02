@@ -88,6 +88,10 @@ fn resolve_type_layout(
         return Ok(tl);
     }
 
+    resolve_type_layout_inner(ty)
+}
+
+fn resolve_type_layout_inner(ty: &Type) -> syn::Result<TypeLayout> {
     match ty {
         Type::Path(tp) => resolve_path_layout(tp),
         Type::Array(ta) => resolve_array_layout(ta),
@@ -102,13 +106,39 @@ fn resolve_path_layout(tp: &TypePath) -> syn::Result<TypeLayout> {
     let ident = type_path_ident(tp);
     match ident.as_deref() {
         Some("f32" | "u32" | "i32") => Ok(TypeLayout { align: 4, size: 4 }),
-        Some("u64") => Ok(TypeLayout { align: 8, size: 8 }),
+        Some("f64" | "u64" | "i64") => Ok(TypeLayout { align: 8, size: 8 }),
+        Some("u16" | "i16") => Ok(TypeLayout { align: 2, size: 2 }),
+        Some("bool") => Ok(TypeLayout { align: 4, size: 4 }),
+
         Some("Vec2" | "UVec2" | "IVec2") => Ok(TypeLayout { align: 4, size: 8 }),
         Some("Vec3" | "UVec3" | "IVec3") => Ok(TypeLayout { align: 4, size: 12 }),
         Some("Vec3A") => Ok(TypeLayout { align: 4, size: 16 }),
         Some("Vec4" | "UVec4" | "IVec4") => Ok(TypeLayout { align: 4, size: 16 }),
+
+        Some("BVec2") => Ok(TypeLayout { align: 4, size: 8 }),
+        Some("BVec3") => Ok(TypeLayout { align: 4, size: 12 }),
+        Some("BVec4") => Ok(TypeLayout { align: 4, size: 16 }),
+
+        Some("Mat2") => Ok(TypeLayout { align: 4, size: 16 }),
         Some("Mat3") => Ok(TypeLayout { align: 4, size: 36 }),
         Some("Mat4") => Ok(TypeLayout { align: 4, size: 64 }),
+
+        Some("DVec2") => Ok(TypeLayout { align: 8, size: 16 }),
+        Some("DVec3") => Ok(TypeLayout { align: 8, size: 24 }),
+        Some("DVec4") => Ok(TypeLayout { align: 8, size: 32 }),
+
+        Some("DMat2") => Ok(TypeLayout { align: 8, size: 32 }),
+        Some("DMat3") => Ok(TypeLayout { align: 8, size: 72 }),
+        Some("DMat4") => Ok(TypeLayout { align: 8, size: 128 }),
+
+        Some("U64Vec2" | "I64Vec2") => Ok(TypeLayout { align: 8, size: 16 }),
+        Some("U64Vec3" | "I64Vec3") => Ok(TypeLayout { align: 8, size: 24 }),
+        Some("U64Vec4" | "I64Vec4") => Ok(TypeLayout { align: 8, size: 32 }),
+
+        Some("U16Vec2" | "I16Vec2") => Ok(TypeLayout { align: 2, size: 4 }),
+        Some("U16Vec3" | "I16Vec3") => Ok(TypeLayout { align: 2, size: 6 }),
+        Some("U16Vec4" | "I16Vec4") => Ok(TypeLayout { align: 2, size: 8 }),
+
         _ => Err(syn::Error::new_spanned(
             tp,
             format!(
@@ -124,53 +154,11 @@ fn resolve_path_layout(tp: &TypePath) -> syn::Result<TypeLayout> {
 
 fn resolve_array_layout(ta: &TypeArray) -> syn::Result<TypeLayout> {
     let len = parse_array_len(&ta.len)?;
-    let elem = &*ta.elem;
-
-    match elem {
-        Type::Path(tp) => {
-            let inner = resolve_path_layout(tp)?;
-            match len {
-                2 | 3 | 4 => Ok(TypeLayout {
-                    align: inner.align,
-                    size: inner.size * len,
-                }),
-                _ => Err(syn::Error::new_spanned(
-                    ta,
-                    "unsupported array length for `ShaderType` — use `#[align(N)]`",
-                )),
-            }
-        }
-        Type::Array(inner_arr) => {
-            let inner_len = parse_array_len(&inner_arr.len)?;
-            let inner_elem = &*inner_arr.elem;
-
-            let scalar_size = match inner_elem {
-                Type::Path(tp) => resolve_path_layout(tp)?.size,
-                _ => {
-                    return Err(syn::Error::new_spanned(
-                        inner_elem,
-                        "unsupported nested array element type",
-                    ));
-                }
-            };
-
-            if scalar_size == 4 && inner_len == 4 && len == 4 {
-                return Ok(TypeLayout { align: 4, size: 64 });
-            }
-            if scalar_size == 4 && inner_len == 4 && len == 3 {
-                return Ok(TypeLayout { align: 4, size: 48 });
-            }
-
-            Err(syn::Error::new_spanned(
-                ta,
-                "unsupported matrix type — use `[[f32; 4]; 4]` for mat4 or `[[f32; 4]; 3]` for mat3",
-            ))
-        }
-        _ => Err(syn::Error::new_spanned(
-            ta,
-            "unsupported array element type for `ShaderType`",
-        )),
-    }
+    let inner = resolve_type_layout_inner(&ta.elem)?;
+    Ok(TypeLayout {
+        align: inner.align,
+        size: inner.size * len,
+    })
 }
 
 fn parse_align_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<TypeLayout>> {
