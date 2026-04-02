@@ -2,18 +2,12 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, LitInt, Type, TypeArray, TypePath};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Layout {
-    Std140,
-    Std430,
-}
-
 struct TypeLayout {
     align: usize,
     size: usize,
 }
 
-pub fn impl_shader_type(input: DeriveInput, layout: Layout) -> syn::Result<TokenStream> {
+pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
     let name = &input.ident;
 
     let named_fields = match &input.data {
@@ -44,7 +38,7 @@ pub fn impl_shader_type(input: DeriveInput, layout: Layout) -> syn::Result<Token
         let field_name = field.ident.as_ref().unwrap();
         let field_ty = &field.ty;
 
-        let tl = resolve_type_layout(field_ty, &field.attrs, layout)?;
+        let tl = resolve_type_layout(field_ty, &field.attrs)?;
 
         let aligned_offset = round_up(offset, tl.align);
         let end = aligned_offset + tl.size;
@@ -63,10 +57,6 @@ pub fn impl_shader_type(input: DeriveInput, layout: Layout) -> syn::Result<Token
         if tl.align > max_align {
             max_align = tl.align;
         }
-    }
-
-    if layout == Layout::Std140 {
-        max_align = round_up(max_align, 16);
     }
 
     let padded_size = round_up(offset, max_align);
@@ -93,15 +83,14 @@ pub fn impl_shader_type(input: DeriveInput, layout: Layout) -> syn::Result<Token
 fn resolve_type_layout(
     ty: &Type,
     attrs: &[syn::Attribute],
-    layout: Layout,
 ) -> syn::Result<TypeLayout> {
-    if let Some(tl) = parse_align_attr(attrs, layout)? {
+    if let Some(tl) = parse_align_attr(attrs)? {
         return Ok(tl);
     }
 
     match ty {
-        Type::Path(tp) => resolve_path_layout(tp, layout),
-        Type::Array(ta) => resolve_array_layout(ta, layout),
+        Type::Path(tp) => resolve_path_layout(tp),
+        Type::Array(ta) => resolve_array_layout(ta),
         _ => Err(syn::Error::new_spanned(
             ty,
             "unsupported type for `ShaderType` — use `#[align(N)]` to specify layout manually",
@@ -109,50 +98,17 @@ fn resolve_type_layout(
     }
 }
 
-fn resolve_path_layout(tp: &TypePath, _layout: Layout) -> syn::Result<TypeLayout> {
+fn resolve_path_layout(tp: &TypePath) -> syn::Result<TypeLayout> {
     let ident = type_path_ident(tp);
     match ident.as_deref() {
         Some("f32" | "u32" | "i32") => Ok(TypeLayout { align: 4, size: 4 }),
         Some("u64") => Ok(TypeLayout { align: 8, size: 8 }),
-        Some("Vec2") => Ok(TypeLayout { align: 8, size: 8 }),
-        Some("Vec3") => Ok(TypeLayout {
-            align: 16,
-            size: 12,
-        }),
-        Some("Vec3A") => Ok(TypeLayout {
-            align: 16,
-            size: 16,
-        }),
-        Some("Vec4") => Ok(TypeLayout {
-            align: 16,
-            size: 16,
-        }),
-        Some("UVec2") => Ok(TypeLayout { align: 8, size: 8 }),
-        Some("UVec3") => Ok(TypeLayout {
-            align: 16,
-            size: 12,
-        }),
-        Some("UVec4") => Ok(TypeLayout {
-            align: 16,
-            size: 16,
-        }),
-        Some("IVec2") => Ok(TypeLayout { align: 8, size: 8 }),
-        Some("IVec3") => Ok(TypeLayout {
-            align: 16,
-            size: 12,
-        }),
-        Some("IVec4") => Ok(TypeLayout {
-            align: 16,
-            size: 16,
-        }),
-        Some("Mat3") => Ok(TypeLayout {
-            align: 16,
-            size: 48,
-        }),
-        Some("Mat4") => Ok(TypeLayout {
-            align: 16,
-            size: 64,
-        }),
+        Some("Vec2" | "UVec2" | "IVec2") => Ok(TypeLayout { align: 4, size: 8 }),
+        Some("Vec3" | "UVec3" | "IVec3") => Ok(TypeLayout { align: 4, size: 12 }),
+        Some("Vec3A") => Ok(TypeLayout { align: 4, size: 16 }),
+        Some("Vec4" | "UVec4" | "IVec4") => Ok(TypeLayout { align: 4, size: 16 }),
+        Some("Mat3") => Ok(TypeLayout { align: 4, size: 36 }),
+        Some("Mat4") => Ok(TypeLayout { align: 4, size: 64 }),
         _ => Err(syn::Error::new_spanned(
             tp,
             format!(
@@ -166,25 +122,17 @@ fn resolve_path_layout(tp: &TypePath, _layout: Layout) -> syn::Result<TypeLayout
     }
 }
 
-fn resolve_array_layout(ta: &TypeArray, layout: Layout) -> syn::Result<TypeLayout> {
+fn resolve_array_layout(ta: &TypeArray) -> syn::Result<TypeLayout> {
     let len = parse_array_len(&ta.len)?;
     let elem = &*ta.elem;
 
     match elem {
         Type::Path(tp) => {
-            let inner = resolve_path_layout(tp, layout)?;
+            let inner = resolve_path_layout(tp)?;
             match len {
-                2 => Ok(TypeLayout {
-                    align: inner.size * 2,
-                    size: inner.size * 2,
-                }),
-                3 => Ok(TypeLayout {
-                    align: 16,
-                    size: inner.size * 3,
-                }),
-                4 => Ok(TypeLayout {
-                    align: inner.size * 4,
-                    size: inner.size * 4,
+                2 | 3 | 4 => Ok(TypeLayout {
+                    align: inner.align,
+                    size: inner.size * len,
                 }),
                 _ => Err(syn::Error::new_spanned(
                     ta,
@@ -197,7 +145,7 @@ fn resolve_array_layout(ta: &TypeArray, layout: Layout) -> syn::Result<TypeLayou
             let inner_elem = &*inner_arr.elem;
 
             let scalar_size = match inner_elem {
-                Type::Path(tp) => resolve_path_layout(tp, layout)?.size,
+                Type::Path(tp) => resolve_path_layout(tp)?.size,
                 _ => {
                     return Err(syn::Error::new_spanned(
                         inner_elem,
@@ -207,16 +155,10 @@ fn resolve_array_layout(ta: &TypeArray, layout: Layout) -> syn::Result<TypeLayou
             };
 
             if scalar_size == 4 && inner_len == 4 && len == 4 {
-                return Ok(TypeLayout {
-                    align: 16,
-                    size: 64,
-                });
+                return Ok(TypeLayout { align: 4, size: 64 });
             }
             if scalar_size == 4 && inner_len == 4 && len == 3 {
-                return Ok(TypeLayout {
-                    align: 16,
-                    size: 48,
-                });
+                return Ok(TypeLayout { align: 4, size: 48 });
             }
 
             Err(syn::Error::new_spanned(
@@ -231,7 +173,7 @@ fn resolve_array_layout(ta: &TypeArray, layout: Layout) -> syn::Result<TypeLayou
     }
 }
 
-fn parse_align_attr(attrs: &[syn::Attribute], _layout: Layout) -> syn::Result<Option<TypeLayout>> {
+fn parse_align_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<TypeLayout>> {
     for attr in attrs {
         if attr.path().is_ident("align") {
             let lit: LitInt = attr.parse_args()?;

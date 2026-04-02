@@ -142,11 +142,10 @@ fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
 /// inserted. Instead, padding is applied at serialization time when calling
 /// methods like [`Cmd::push_shader`] or [`Graph::write_shader`].
 ///
-/// # Layout selection
-///
-/// - `#[derive(ShaderType)]` — std140 (default, suitable for uniform buffers)
-/// - `#[shader_type(std430)]` on the struct — std430 (suitable for storage
-///   buffers)
+/// Uses **scalar layout** (`VK_EXT_scalar_block_layout`): each type is aligned
+/// to the size of its scalar component (4 for `f32`/`u32`/`i32`, 8 for `u64`).
+/// This matches the layout used by Slang/SPIR-V for buffer references (BDA)
+/// and push constants.
 ///
 /// # Supported field types
 ///
@@ -178,31 +177,11 @@ fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
 /// let cam = Camera { view, proj, position: [0.0, 1.0, 0.0] };
 /// cmd.push_shader(&cam);
 /// ```
-#[proc_macro_derive(ShaderType, attributes(shader_type, align))]
+#[proc_macro_derive(ShaderType, attributes(align))]
 pub fn derive_shader_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let layout = parse_shader_type_layout(&input.attrs).unwrap_or(shader::Layout::Std140);
-
-    shader::impl_shader_type(input, layout)
+    shader::impl_shader_type(input)
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
-}
-
-fn parse_shader_type_layout(attrs: &[syn::Attribute]) -> Option<shader::Layout> {
-    for attr in attrs {
-        if attr.path().is_ident("shader_type") {
-            let mut layout = None;
-            let _ = attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("std140") {
-                    layout = Some(shader::Layout::Std140);
-                } else if meta.path.is_ident("std430") {
-                    layout = Some(shader::Layout::Std430);
-                }
-                Ok(())
-            });
-            return layout;
-        }
-    }
-    None
 }

@@ -1,13 +1,16 @@
 /// Trait for types that can be serialized to GPU-compatible padded byte layouts
-/// (std140 / std430).
+/// using **scalar layout** (`VK_EXT_scalar_block_layout`).
+///
+/// Each type is aligned to the size of its scalar component (4 bytes for
+/// `f32`/`u32`/`i32`, 8 bytes for `u64`). This matches the layout produced by
+/// Slang/SPIR-V for buffer references (BDA) and push constants.
 ///
 /// All standard scalar, vector and matrix types implement this trait. Enable the
 /// `glam` feature for `glam` type support.
 ///
 /// Derive this trait with `#[derive(ShaderType)]` on a struct to automatically
 /// generate `Clone`, `Copy`, and a [`write_padded`](ShaderType::write_padded)
-/// implementation that inserts the correct padding for std140 (default) or
-/// std430.
+/// implementation that inserts the correct padding for scalar layout.
 ///
 /// # Example
 ///
@@ -87,12 +90,12 @@ mod glam_impls {
     );
 
     impl ShaderType for glam::Mat3 {
-        const PADDED_SIZE: usize = 48;
+        const PADDED_SIZE: usize = 36;
 
         fn write_padded(&self, dst: &mut [u8]) {
             let cols = self.to_cols_array_2d();
             for (i, col) in cols.iter().enumerate() {
-                let off = i * 16;
+                let off = i * 12;
                 dst[off..off + 12].copy_from_slice(bytemuck::cast_slice(col));
             }
         }
