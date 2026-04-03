@@ -127,6 +127,10 @@ impl ImageEntry {
     pub(crate) fn view(&self, pool: &ResourcePool) -> vk::ImageView {
         self.resolve(pool).1
     }
+
+    pub(crate) fn layer_count(&self) -> u32 {
+        self.desc.kind.array_layers()
+    }
 }
 
 pub(crate) fn aspect_from_format(format: vk::Format) -> vk::ImageAspectFlags {

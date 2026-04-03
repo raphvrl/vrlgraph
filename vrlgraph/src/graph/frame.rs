@@ -274,7 +274,7 @@ impl Graph {
         }
 
         let mut img_states: Vec<BarrierState> =
-            self.images.iter().map(BarrierState::from_entry).collect();
+            self.images.iter().map(|e| BarrierState::from_entry(e)).collect();
 
         let raw = self.frames[self.frame_index].pool.reset_and_begin()?;
         let mut cmd = Cmd::new(
@@ -309,13 +309,17 @@ impl Graph {
                 .writes
                 .iter()
                 .filter(|w| w.is_color)
-                .map(|w| resolve_load_op(w.load_op, img_states[w.image.0 as usize].layout))
+                .map(|w| {
+                    let layer_idx = w.layer.unwrap_or(0) as usize;
+                    resolve_load_op(w.load_op, img_states[w.image.0 as usize].layers[layer_idx].layout)
+                })
                 .collect();
             let depth_write: Option<(&PassAccess, vk::AttachmentLoadOp)> =
                 pass.writes.iter().find(|w| w.is_depth).map(|w| {
+                    let layer_idx = w.layer.unwrap_or(0) as usize;
                     (
                         w,
-                        resolve_load_op(w.load_op, img_states[w.image.0 as usize].layout),
+                        resolve_load_op(w.load_op, img_states[w.image.0 as usize].layers[layer_idx].layout),
                     )
                 });
 
@@ -493,15 +497,15 @@ impl Graph {
         }
 
         if let Some(sc_h) = self.sc_graph_image {
-            let state = &img_states[sc_h.0 as usize];
-            if state.layout != vk::ImageLayout::PRESENT_SRC_KHR {
+            let sc_layer = &img_states[sc_h.0 as usize].layers[0];
+            if sc_layer.layout != vk::ImageLayout::PRESENT_SRC_KHR {
                 let (sc_raw, _) = self.images[sc_h.0 as usize].resolve(&self.resources);
                 let barrier = vk::ImageMemoryBarrier2::default()
-                    .src_stage_mask(state.stage)
-                    .src_access_mask(state.access)
+                    .src_stage_mask(sc_layer.stage)
+                    .src_access_mask(sc_layer.access)
                     .dst_stage_mask(vk::PipelineStageFlags2::NONE)
                     .dst_access_mask(vk::AccessFlags2::NONE)
-                    .old_layout(state.layout)
+                    .old_layout(sc_layer.layout)
                     .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
                     .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                     .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
@@ -565,9 +569,10 @@ impl Graph {
         }
 
         for (i, state) in img_states.iter().enumerate().take(self.persistent_count) {
-            self.images[i].layout = state.layout;
-            self.images[i].stage = state.stage;
-            self.images[i].access = state.access;
+            let rep = state.representative();
+            self.images[i].layout = rep.layout;
+            self.images[i].stage = rep.stage;
+            self.images[i].access = rep.access;
         }
 
         self.current = (self.current + 1) % self.frames.len();

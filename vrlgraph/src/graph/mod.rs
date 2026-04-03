@@ -140,6 +140,7 @@ impl DeferredBindlessFrees {
         }
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.sampled.is_empty()
             && self.storage.is_empty()
