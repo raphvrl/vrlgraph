@@ -388,15 +388,21 @@ impl Graph {
                 cmd.pipeline_barrier2_mixed(&img_barriers, &buf_barriers);
             }
 
+            debug_assert!(
+                pass.view_mask == 0 || pass.writes.iter().all(|w| w.layer.is_none()),
+                "multiview passes must use write(), not write_layer()"
+            );
+
             let color_attachments: SmallVec<[vk::RenderingAttachmentInfo<'_>; 4]> = pass
                 .writes
                 .iter()
                 .filter(|w| w.is_color)
                 .zip(color_load_ops.iter())
                 .map(|(w, &load_op)| {
+                    let effective_layer = if pass.view_mask != 0 { None } else { w.layer };
                     let view = resolve_attachment_view(
                         &self.images[w.image.0 as usize],
-                        w.layer,
+                        effective_layer,
                         &self.resources,
                     );
                     vk::RenderingAttachmentInfo::default()
@@ -413,9 +419,10 @@ impl Graph {
                 .collect();
 
             let depth_attachment = depth_write.map(|(w, load_op)| {
+                let effective_layer = if pass.view_mask != 0 { None } else { w.layer };
                 let view = resolve_attachment_view(
                     &self.images[w.image.0 as usize],
-                    w.layer,
+                    effective_layer,
                     &self.resources,
                 );
                 vk::RenderingAttachmentInfo::default()
@@ -447,12 +454,14 @@ impl Graph {
                     })
                     .unwrap_or_default();
 
+                let layer_count = if pass.view_mask != 0 { 0 } else { 1 };
+
                 let mut rendering_info = vk::RenderingInfo::default()
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D::default(),
                         extent,
                     })
-                    .layer_count(1)
+                    .layer_count(layer_count)
                     .color_attachments(&color_attachments);
 
                 if pass.view_mask != 0 {

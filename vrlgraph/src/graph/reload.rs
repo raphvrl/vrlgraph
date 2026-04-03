@@ -23,6 +23,7 @@ pub(crate) enum PipelineKind {
         depth_format: Option<vk::Format>,
         vertex_bindings: Vec<vk::VertexInputBindingDescription>,
         vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
+        view_mask: u32,
     },
     Compute {
         shader: ShaderModuleHandle,

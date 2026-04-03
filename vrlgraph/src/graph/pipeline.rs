@@ -41,6 +41,7 @@ pub(super) fn create_graphics_pipeline_raw(
     depth_format: Option<vk::Format>,
     vertex_bindings: &[vk::VertexInputBindingDescription],
     vertex_attributes: &[vk::VertexInputAttributeDescription],
+    view_mask: u32,
 ) -> Result<GpuPipeline, GraphError> {
     let stages = [
         vk::PipelineShaderStageCreateInfo::default()
@@ -73,8 +74,9 @@ pub(super) fn create_graphics_pipeline_raw(
     let dynamic_state =
         vk::PipelineDynamicStateCreateInfo::default().dynamic_states(DYNAMIC_STATES);
 
-    let mut rendering_info =
-        vk::PipelineRenderingCreateInfo::default().color_attachment_formats(color_formats);
+    let mut rendering_info = vk::PipelineRenderingCreateInfo::default()
+        .color_attachment_formats(color_formats)
+        .view_mask(view_mask);
     if let Some(depth_fmt) = depth_format {
         rendering_info = rendering_info.depth_attachment_format(depth_fmt);
     }
@@ -150,6 +152,7 @@ pub struct PipelineBuilder<'g> {
     depth_format: Option<vk::Format>,
     vertex_bindings: Vec<vk::VertexInputBindingDescription>,
     vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
+    view_mask: u32,
 }
 
 impl<'g> PipelineBuilder<'g> {
@@ -164,6 +167,7 @@ impl<'g> PipelineBuilder<'g> {
             depth_format: None,
             vertex_bindings: Vec::new(),
             vertex_attributes: Vec::new(),
+            view_mask: 0,
         }
     }
 
@@ -218,6 +222,11 @@ impl<'g> PipelineBuilder<'g> {
         self
     }
 
+    pub fn view_mask(mut self, mask: u32) -> Self {
+        self.view_mask = mask;
+        self
+    }
+
     /// Compiles the pipeline and registers it with the graph.
     /// Returns a [`Pipeline`] that can be passed to [`FrameResources::pipeline`](super::pass::FrameResources::pipeline).
     pub fn build(self) -> Result<Pipeline, GraphError> {
@@ -258,6 +267,7 @@ impl<'g> PipelineBuilder<'g> {
             self.depth_format,
             &self.vertex_bindings,
             &self.vertex_attributes,
+            self.view_mask,
         )?;
 
         if let Some(du) = self.graph.device().debug_utils() {
@@ -281,6 +291,7 @@ impl<'g> PipelineBuilder<'g> {
                     depth_format: self.depth_format,
                     vertex_bindings: self.vertex_bindings,
                     vertex_attributes: self.vertex_attributes,
+                    view_mask: self.view_mask,
                 },
             },
         );

@@ -221,6 +221,7 @@ impl Graph {
                 depth_format,
                 vertex_bindings,
                 vertex_attributes,
+                view_mask,
             } => {
                 let vert = self
                     .resources
@@ -248,6 +249,7 @@ impl Graph {
                     *depth_format,
                     vertex_bindings,
                     vertex_attributes,
+                    *view_mask,
                 )
             }
 

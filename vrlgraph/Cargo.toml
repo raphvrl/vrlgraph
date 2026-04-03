@@ -53,3 +53,7 @@ required-features = ["glam"]
 [[example]]
 name = "array_layers"
 path = "examples/array_layers/main.rs"
+
+[[example]]
+name = "multiview"
+path = "examples/multiview/main.rs"
