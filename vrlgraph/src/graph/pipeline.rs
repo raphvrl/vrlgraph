@@ -383,7 +383,7 @@ pub(super) fn load_spv(path: &Path) -> Result<Vec<u32>, super::GraphError> {
 
     if bytes.len() % 4 != 0 {
         return Err(super::GraphError::ShaderLoad(format!(
-            "{}: taille SPIR-V non alignée sur 4 octets",
+            "{}: SPIR-V size is not aligned to 4 bytes",
             path.display()
         )));
     }

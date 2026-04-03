@@ -49,3 +49,7 @@ path = "examples/compute/main.rs"
 name = "buffers"
 path = "examples/buffers/main.rs"
 required-features = ["glam"]
+
+[[example]]
+name = "array_layers"
+path = "examples/array_layers/main.rs"

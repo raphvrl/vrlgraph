@@ -14,6 +14,9 @@ fn main() {
     let profile = std::env::var("PROFILE").unwrap();
 
     let shaders_out = manifest_dir
+        .ancestors()
+        .find(|p| p.join("Cargo.lock").exists())
+        .unwrap_or(&manifest_dir)
         .join("target")
         .join(&profile)
         .join("examples")
