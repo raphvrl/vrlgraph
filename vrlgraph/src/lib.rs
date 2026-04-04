@@ -9,7 +9,7 @@ pub mod vertex;
 
 pub use ash;
 
-pub use shader::ShaderType;
+pub use shader::{ShaderType, round_up};
 pub use vertex::{VertexAttribute, VertexInput};
 pub use vrlgraph_derive::{ShaderType, VertexInput};
 

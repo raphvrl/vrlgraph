@@ -1,11 +1,6 @@
 use proc_macro2::TokenStream;
-use quote::quote;
-use syn::{Data, DeriveInput, Fields, LitInt, Type, TypeArray, TypePath};
-
-struct TypeLayout {
-    align: usize,
-    size: usize,
-}
+use quote::{format_ident, quote};
+use syn::{Data, DeriveInput, Fields, LitInt};
 
 pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
     let name = &input.ident;
@@ -28,38 +23,57 @@ pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
-    let mut offset: usize = 0;
-    let mut max_align: usize = 0;
+    let mut const_decls: Vec<TokenStream> = Vec::new();
     let mut write_stmts: Vec<TokenStream> = Vec::new();
-    let mut field_names: Vec<syn::Ident> = Vec::new();
-    let mut field_types: Vec<Type> = Vec::new();
+    let mut align_exprs: Vec<TokenStream> = Vec::new();
 
-    for field in named_fields.iter() {
+    for (i, field) in named_fields.iter().enumerate() {
         let field_name = field.ident.as_ref().unwrap();
         let field_ty = &field.ty;
+        let offset_ident = format_ident!("__OFF_{}", i);
+        let end_ident = format_ident!("__END_{}", i);
 
-        let tl = resolve_type_layout(field_ty, &field.attrs)?;
+        let (align_expr, size_expr) = match parse_align_override(&field.attrs)? {
+            Some(val) => (quote! { #val }, quote! { #val }),
+            None => (
+                quote! { <#field_ty as ::vrlgraph::ShaderType>::SCALAR_ALIGN },
+                quote! { <#field_ty as ::vrlgraph::ShaderType>::PADDED_SIZE },
+            ),
+        };
 
-        let aligned_offset = round_up(offset, tl.align);
-        let end = aligned_offset + tl.size;
+        let prev_end = if i == 0 {
+            quote! { 0usize }
+        } else {
+            let prev = format_ident!("__END_{}", i - 1);
+            quote! { #prev }
+        };
+
+        const_decls.push(quote! {
+            const #offset_ident: usize = ::vrlgraph::round_up(#prev_end, #align_expr);
+            const #end_ident: usize = #offset_ident + #size_expr;
+        });
 
         write_stmts.push(quote! {
             <#field_ty as ::vrlgraph::ShaderType>::write_padded(
                 &self.#field_name,
-                &mut dst[#aligned_offset..#end],
+                &mut dst[#offset_ident..#end_ident],
             );
         });
 
-        field_names.push(field_name.clone());
-        field_types.push(field_ty.clone());
-
-        offset = end;
-        if tl.align > max_align {
-            max_align = tl.align;
-        }
+        align_exprs.push(align_expr);
     }
 
-    let padded_size = round_up(offset, max_align);
+    let max_align_expr = align_exprs.iter().rev().fold(
+        quote! { 1usize },
+        |acc, a| quote! { const_max(#a, #acc) },
+    );
+
+    let last_end = if named_fields.is_empty() {
+        quote! { 0usize }
+    } else {
+        let last = format_ident!("__END_{}", named_fields.len() - 1);
+        quote! { #last }
+    };
 
     Ok(quote! {
         impl Clone for #name {
@@ -71,97 +85,30 @@ pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
         impl Copy for #name {}
 
         impl ::vrlgraph::ShaderType for #name {
-            const PADDED_SIZE: usize = #padded_size;
+            const SCALAR_ALIGN: usize = {
+                const fn const_max(a: usize, b: usize) -> usize {
+                    if a > b { a } else { b }
+                }
+                #max_align_expr
+            };
+
+            const PADDED_SIZE: usize = {
+                const fn const_max(a: usize, b: usize) -> usize {
+                    if a > b { a } else { b }
+                }
+                #(#const_decls)*
+                ::vrlgraph::round_up(#last_end, #max_align_expr)
+            };
 
             fn write_padded(&self, dst: &mut [u8]) {
+                #(#const_decls)*
                 #(#write_stmts)*
             }
         }
     })
 }
 
-fn resolve_type_layout(
-    ty: &Type,
-    attrs: &[syn::Attribute],
-) -> syn::Result<TypeLayout> {
-    if let Some(tl) = parse_align_attr(attrs)? {
-        return Ok(tl);
-    }
-
-    resolve_type_layout_inner(ty)
-}
-
-fn resolve_type_layout_inner(ty: &Type) -> syn::Result<TypeLayout> {
-    match ty {
-        Type::Path(tp) => resolve_path_layout(tp),
-        Type::Array(ta) => resolve_array_layout(ta),
-        _ => Err(syn::Error::new_spanned(
-            ty,
-            "unsupported type for `ShaderType` — use `#[align(N)]` to specify layout manually",
-        )),
-    }
-}
-
-fn resolve_path_layout(tp: &TypePath) -> syn::Result<TypeLayout> {
-    let ident = type_path_ident(tp);
-    match ident.as_deref() {
-        Some("f32" | "u32" | "i32") => Ok(TypeLayout { align: 4, size: 4 }),
-        Some("f64" | "u64" | "i64") => Ok(TypeLayout { align: 8, size: 8 }),
-        Some("u16" | "i16") => Ok(TypeLayout { align: 2, size: 2 }),
-        Some("bool") => Ok(TypeLayout { align: 4, size: 4 }),
-
-        Some("Vec2" | "UVec2" | "IVec2") => Ok(TypeLayout { align: 4, size: 8 }),
-        Some("Vec3" | "UVec3" | "IVec3") => Ok(TypeLayout { align: 4, size: 12 }),
-        Some("Vec3A") => Ok(TypeLayout { align: 4, size: 16 }),
-        Some("Vec4" | "UVec4" | "IVec4") => Ok(TypeLayout { align: 4, size: 16 }),
-
-        Some("BVec2") => Ok(TypeLayout { align: 4, size: 8 }),
-        Some("BVec3") => Ok(TypeLayout { align: 4, size: 12 }),
-        Some("BVec4") => Ok(TypeLayout { align: 4, size: 16 }),
-
-        Some("Mat2") => Ok(TypeLayout { align: 4, size: 16 }),
-        Some("Mat3") => Ok(TypeLayout { align: 4, size: 36 }),
-        Some("Mat4") => Ok(TypeLayout { align: 4, size: 64 }),
-
-        Some("DVec2") => Ok(TypeLayout { align: 8, size: 16 }),
-        Some("DVec3") => Ok(TypeLayout { align: 8, size: 24 }),
-        Some("DVec4") => Ok(TypeLayout { align: 8, size: 32 }),
-
-        Some("DMat2") => Ok(TypeLayout { align: 8, size: 32 }),
-        Some("DMat3") => Ok(TypeLayout { align: 8, size: 72 }),
-        Some("DMat4") => Ok(TypeLayout { align: 8, size: 128 }),
-
-        Some("U64Vec2" | "I64Vec2") => Ok(TypeLayout { align: 8, size: 16 }),
-        Some("U64Vec3" | "I64Vec3") => Ok(TypeLayout { align: 8, size: 24 }),
-        Some("U64Vec4" | "I64Vec4") => Ok(TypeLayout { align: 8, size: 32 }),
-
-        Some("U16Vec2" | "I16Vec2") => Ok(TypeLayout { align: 2, size: 4 }),
-        Some("U16Vec3" | "I16Vec3") => Ok(TypeLayout { align: 2, size: 6 }),
-        Some("U16Vec4" | "I16Vec4") => Ok(TypeLayout { align: 2, size: 8 }),
-
-        _ => Err(syn::Error::new_spanned(
-            tp,
-            format!(
-                "unknown type `{}` for `ShaderType` — use `#[align(N)]` to specify layout manually",
-                tp.path
-                    .segments
-                    .last()
-                    .map_or("?", |s| s.ident.to_string().leak())
-            ),
-        )),
-    }
-}
-
-fn resolve_array_layout(ta: &TypeArray) -> syn::Result<TypeLayout> {
-    let len = parse_array_len(&ta.len)?;
-    let inner = resolve_type_layout_inner(&ta.elem)?;
-    Ok(TypeLayout {
-        align: inner.align,
-        size: inner.size * len,
-    })
-}
-
-fn parse_align_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<TypeLayout>> {
+fn parse_align_override(attrs: &[syn::Attribute]) -> syn::Result<Option<usize>> {
     for attr in attrs {
         if attr.path().is_ident("align") {
             let lit: LitInt = attr.parse_args()?;
@@ -172,29 +119,8 @@ fn parse_align_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<TypeLayout>>
                     "alignment must be a power of two",
                 ));
             }
-            return Ok(Some(TypeLayout { align, size: align }));
+            return Ok(Some(align));
         }
     }
     Ok(None)
-}
-
-fn type_path_ident(tp: &TypePath) -> Option<String> {
-    tp.path.segments.last().map(|s| s.ident.to_string())
-}
-
-fn parse_array_len(expr: &syn::Expr) -> syn::Result<usize> {
-    match expr {
-        syn::Expr::Lit(syn::ExprLit {
-            lit: syn::Lit::Int(lit),
-            ..
-        }) => lit.base10_parse(),
-        _ => Err(syn::Error::new_spanned(
-            expr,
-            "expected integer literal for array length",
-        )),
-    }
-}
-
-const fn round_up(value: usize, align: usize) -> usize {
-    (value + align - 1) & !(align - 1)
 }

@@ -31,6 +31,7 @@
 /// cmd.push_shader(&cam);
 /// ```
 pub trait ShaderType {
+    const SCALAR_ALIGN: usize;
     const PADDED_SIZE: usize;
 
     fn write_padded(&self, dst: &mut [u8]);
@@ -41,8 +42,9 @@ pub const fn round_up(value: usize, align: usize) -> usize {
 }
 
 macro_rules! impl_shader_type_pod {
-    ($($ty:ty),*) => {
+    ($align:expr; $($ty:ty),*) => {
         $(impl ShaderType for $ty {
+            const SCALAR_ALIGN: usize = $align;
             const PADDED_SIZE: usize = ::core::mem::size_of::<$ty>();
 
             fn write_padded(&self, dst: &mut [u8]) {
@@ -53,9 +55,12 @@ macro_rules! impl_shader_type_pod {
     };
 }
 
-impl_shader_type_pod!(f32, u32, i32, u64, f64, i64, u16, i16);
+impl_shader_type_pod!(4; f32, u32, i32);
+impl_shader_type_pod!(8; u64, f64, i64);
+impl_shader_type_pod!(2; u16, i16);
 
 impl ShaderType for bool {
+    const SCALAR_ALIGN: usize = 4;
     const PADDED_SIZE: usize = 4;
 
     fn write_padded(&self, dst: &mut [u8]) {
@@ -65,6 +70,7 @@ impl ShaderType for bool {
 }
 
 impl<T: ShaderType, const N: usize> ShaderType for [T; N] {
+    const SCALAR_ALIGN: usize = T::SCALAR_ALIGN;
     const PADDED_SIZE: usize = T::PADDED_SIZE * N;
 
     fn write_padded(&self, dst: &mut [u8]) {
@@ -78,39 +84,27 @@ impl<T: ShaderType, const N: usize> ShaderType for [T; N] {
 mod glam_impls {
     use super::*;
 
-    impl_shader_type_pod!(
-        glam::Vec2,
-        glam::Vec3,
-        glam::Vec3A,
-        glam::Vec4,
-        glam::UVec2,
-        glam::UVec3,
-        glam::UVec4,
-        glam::IVec2,
-        glam::IVec3,
-        glam::IVec4,
-        glam::Mat2,
-        glam::Mat4,
-        glam::DVec2,
-        glam::DVec3,
-        glam::DVec4,
-        glam::DMat2,
-        glam::DMat4,
-        glam::U64Vec2,
-        glam::U64Vec3,
-        glam::U64Vec4,
-        glam::I64Vec2,
-        glam::I64Vec3,
-        glam::I64Vec4,
-        glam::U16Vec2,
-        glam::U16Vec3,
-        glam::U16Vec4,
-        glam::I16Vec2,
-        glam::I16Vec3,
-        glam::I16Vec4
+    impl_shader_type_pod!(4;
+        glam::Vec2, glam::Vec3, glam::Vec3A, glam::Vec4,
+        glam::UVec2, glam::UVec3, glam::UVec4,
+        glam::IVec2, glam::IVec3, glam::IVec4,
+        glam::Mat2, glam::Mat4
+    );
+
+    impl_shader_type_pod!(8;
+        glam::DVec2, glam::DVec3, glam::DVec4,
+        glam::DMat2, glam::DMat4,
+        glam::U64Vec2, glam::U64Vec3, glam::U64Vec4,
+        glam::I64Vec2, glam::I64Vec3, glam::I64Vec4
+    );
+
+    impl_shader_type_pod!(2;
+        glam::U16Vec2, glam::U16Vec3, glam::U16Vec4,
+        glam::I16Vec2, glam::I16Vec3, glam::I16Vec4
     );
 
     impl ShaderType for glam::Mat3 {
+        const SCALAR_ALIGN: usize = 4;
         const PADDED_SIZE: usize = 36;
 
         fn write_padded(&self, dst: &mut [u8]) {
@@ -123,6 +117,7 @@ mod glam_impls {
     }
 
     impl ShaderType for glam::DMat3 {
+        const SCALAR_ALIGN: usize = 8;
         const PADDED_SIZE: usize = 72;
 
         fn write_padded(&self, dst: &mut [u8]) {
@@ -135,6 +130,7 @@ mod glam_impls {
     }
 
     impl ShaderType for glam::BVec2 {
+        const SCALAR_ALIGN: usize = 4;
         const PADDED_SIZE: usize = 8;
 
         fn write_padded(&self, dst: &mut [u8]) {
@@ -144,6 +140,7 @@ mod glam_impls {
     }
 
     impl ShaderType for glam::BVec3 {
+        const SCALAR_ALIGN: usize = 4;
         const PADDED_SIZE: usize = 12;
 
         fn write_padded(&self, dst: &mut [u8]) {
@@ -153,6 +150,7 @@ mod glam_impls {
     }
 
     impl ShaderType for glam::BVec4 {
+        const SCALAR_ALIGN: usize = 4;
         const PADDED_SIZE: usize = 16;
 
         fn write_padded(&self, dst: &mut [u8]) {
