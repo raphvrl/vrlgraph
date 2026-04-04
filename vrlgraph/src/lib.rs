@@ -16,14 +16,16 @@ pub use vrlgraph_derive::{ShaderType, VertexInput};
 pub mod prelude {
 
     pub use crate::graph::{
-        Access, Array2D, BindlessIndex, BufferUsage, Cubemap, Frame, GpuPreference, Graph,
-        GraphError, Image, LoadOp, PassTiming, PresentMode, Sampled, Sampler, SamplerBuilder,
-        Storage, StreamingBufferHandle, WithLayer, WithLayerLoadOp, WithLoadOp,
+        Access, Array2D, BindlessIndex, BufferUsage, Cmd, ComputePipelineBuilder, Cubemap, Frame,
+        FrameResources, GpuPreference, Graph, GraphError, Image, LoadOp, PassTiming, PresentMode,
+        Sampled, Sampler, SamplerBuilder, Storage, StreamingBufferHandle, WithClearColor,
+        WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
     };
 
     pub use crate::resource::{Buffer, BufferDesc, ImageKind, Pipeline, ShaderModule};
 
     pub use crate::types::*;
 
+    pub use ash::vk;
     pub use vrlgraph_derive::{ShaderType, VertexInput};
 }
