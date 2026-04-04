@@ -32,9 +32,12 @@ fn compute_lifetimes(
     lifetimes
 }
 
-fn assign_slots(lifetimes: &[Option<(usize, usize)>]) -> (Vec<Option<usize>>, usize) {
+fn assign_slots(
+    lifetimes: &[Option<(usize, usize)>],
+    images: &[ImageEntry],
+) -> (Vec<Option<usize>>, usize) {
     let mut assignments = vec![None::<usize>; lifetimes.len()];
-    let mut slot_end: Vec<usize> = Vec::new();
+    let mut slot_end: Vec<(usize, vk::Format, vk::ImageAspectFlags)> = Vec::new();
 
     let mut order: Vec<usize> = lifetimes
         .iter()
@@ -45,14 +48,18 @@ fn assign_slots(lifetimes: &[Option<(usize, usize)>]) -> (Vec<Option<usize>>, us
 
     for i in order {
         let (first, last) = lifetimes[i].expect("filtered to non-None above");
-        let slot = slot_end.iter().position(|&end| end < first);
+        let fmt = images[i].desc.format;
+        let asp = images[i].aspect;
+        let slot = slot_end
+            .iter()
+            .position(|&(end, f, a)| end < first && f == fmt && a == asp);
         let slot = match slot {
             Some(s) => {
-                slot_end[s] = last;
+                slot_end[s].0 = last;
                 s
             }
             None => {
-                slot_end.push(last);
+                slot_end.push((last, fmt, asp));
                 slot_end.len() - 1
             }
         };
@@ -108,7 +115,7 @@ impl TransientCache {
     ) -> Result<(), ResourceError> {
         let (assignments, slot_count) = {
             let lifetimes = compute_lifetimes(passes, images, persistent_count);
-            assign_slots(&lifetimes)
+            assign_slots(&lifetimes, images)
         };
 
         while self.slots.len() < slot_count {
@@ -225,6 +232,12 @@ mod tests {
         ImageEntry::persistent(ImageDesc::default())
     }
 
+    fn transient_entry_fmt(format: vk::Format) -> ImageEntry {
+        let mut desc = ImageDesc::default();
+        desc.format = format;
+        ImageEntry::transient(desc)
+    }
+
     fn external_entry() -> ImageEntry {
         ImageEntry::external(
             vk::Image::null(),
@@ -280,16 +293,18 @@ mod tests {
 
     #[test]
     fn slots_overlapping_separate() {
+        let images = vec![persistent_entry(), transient_entry(), transient_entry()];
         let lifetimes = vec![None, Some((0, 1)), Some((0, 1))];
-        let (assignments, count) = assign_slots(&lifetimes);
+        let (assignments, count) = assign_slots(&lifetimes, &images);
         assert_eq!(count, 2);
         assert_ne!(assignments[1], assignments[2]);
     }
 
     #[test]
     fn slots_non_overlapping_share() {
+        let images = vec![persistent_entry(), transient_entry(), transient_entry()];
         let lifetimes = vec![None, Some((0, 0)), Some((1, 1))];
-        let (assignments, count) = assign_slots(&lifetimes);
+        let (assignments, count) = assign_slots(&lifetimes, &images);
         assert_eq!(count, 1);
         assert_eq!(assignments[1], Some(0));
         assert_eq!(assignments[2], Some(0));
@@ -297,11 +312,30 @@ mod tests {
 
     #[test]
     fn slots_chain_reuses() {
+        let images = vec![
+            persistent_entry(),
+            transient_entry(),
+            transient_entry(),
+            transient_entry(),
+        ];
         let lifetimes = vec![None, Some((0, 0)), Some((1, 1)), Some((2, 2))];
-        let (assignments, count) = assign_slots(&lifetimes);
+        let (assignments, count) = assign_slots(&lifetimes, &images);
         assert_eq!(count, 1);
         assert_eq!(assignments[1], Some(0));
         assert_eq!(assignments[2], Some(0));
         assert_eq!(assignments[3], Some(0));
+    }
+
+    #[test]
+    fn slots_incompatible_formats_separate() {
+        let images = vec![
+            persistent_entry(),
+            transient_entry_fmt(vk::Format::D32_SFLOAT),
+            transient_entry_fmt(vk::Format::R16G16B16A16_SFLOAT),
+        ];
+        let lifetimes = vec![None, Some((0, 0)), Some((1, 1))];
+        let (assignments, count) = assign_slots(&lifetimes, &images);
+        assert_eq!(count, 2);
+        assert_ne!(assignments[1], assignments[2]);
     }
 }
