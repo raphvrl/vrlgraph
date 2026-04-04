@@ -164,3 +164,23 @@ mod glam_impls {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::round_up;
+
+    #[test]
+    fn round_up_already_aligned() {
+        assert_eq!(round_up(0, 4), 0);
+        assert_eq!(round_up(16, 16), 16);
+        assert_eq!(round_up(8, 4), 8);
+    }
+
+    #[test]
+    fn round_up_unaligned() {
+        assert_eq!(round_up(1, 4), 4);
+        assert_eq!(round_up(5, 4), 8);
+        assert_eq!(round_up(13, 16), 16);
+        assert_eq!(round_up(17, 16), 32);
+    }
+}

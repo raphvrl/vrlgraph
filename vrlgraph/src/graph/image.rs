@@ -492,4 +492,22 @@ mod tests {
             vk::ImageAspectFlags::COLOR
         );
     }
+
+    #[test]
+    fn mip_levels_1x1() {
+        assert_eq!(super::compute_mip_levels(1, 1), 1);
+    }
+
+    #[test]
+    fn mip_levels_power_of_two() {
+        assert_eq!(super::compute_mip_levels(2, 2), 2);
+        assert_eq!(super::compute_mip_levels(256, 256), 9);
+        assert_eq!(super::compute_mip_levels(1024, 512), 11);
+    }
+
+    #[test]
+    fn mip_levels_non_power_of_two() {
+        assert_eq!(super::compute_mip_levels(300, 200), 9);
+        assert_eq!(super::compute_mip_levels(1, 1024), 11);
+    }
 }

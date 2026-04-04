@@ -177,4 +177,71 @@ mod tests {
         assert_eq!(result[0].name, "producer");
         assert_eq!(result[1].name, "consumer");
     }
+
+    #[test]
+    fn cycle_returns_error() {
+        let a = make_pass("a", &[0], &[1]);
+        let b = make_pass("b", &[1], &[0]);
+        let result = sort_and_cull_passes(vec![a, b], &FxHashSet::from_iter([0, 1]));
+        assert!(result.is_err());
+    }
+
+    fn make_buffer_pass(
+        name: &'static str,
+        buf_writes: &[BufferHandle],
+        buf_reads: &[BufferHandle],
+    ) -> RecordedPass {
+        use crate::graph::pass::BufferAccess;
+        RecordedPass {
+            name,
+            reads: vec![],
+            writes: vec![],
+            buffer_reads: buf_reads
+                .iter()
+                .map(|&handle| BufferAccess {
+                    handle,
+                    stage: vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    access: vk::AccessFlags2::SHADER_READ,
+                })
+                .collect(),
+            buffer_writes: buf_writes
+                .iter()
+                .map(|&handle| BufferAccess {
+                    handle,
+                    stage: vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    access: vk::AccessFlags2::SHADER_WRITE,
+                })
+                .collect(),
+            view_mask: 0,
+            execute: Box::new(|_, _| {}),
+        }
+    }
+
+    #[test]
+    fn buffer_dependency_is_respected() {
+        let buf = BufferHandle::default();
+        let producer = make_buffer_pass("producer", &[buf], &[]);
+        let mut consumer = make_buffer_pass("consumer", &[], &[buf]);
+        consumer.writes = vec![img_access(0)];
+        let result =
+            sort_and_cull_passes(vec![consumer, producer], &FxHashSet::from_iter([0]))
+                .expect("no cycle");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "producer");
+        assert_eq!(result[1].name, "consumer");
+    }
+
+    #[test]
+    fn multiple_writers_preserve_registration_order() {
+        let a = make_pass("a", &[0], &[]);
+        let b = make_pass("b", &[0], &[]);
+        let c = make_pass("c", &[0], &[]);
+        let result =
+            sort_and_cull_passes(vec![a, b, c], &FxHashSet::from_iter([0]))
+                .expect("no cycle");
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].name, "a");
+        assert_eq!(result[1].name, "b");
+        assert_eq!(result[2].name, "c");
+    }
 }

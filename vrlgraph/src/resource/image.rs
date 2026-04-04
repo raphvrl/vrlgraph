@@ -235,3 +235,49 @@ impl GpuImage {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ash::vk;
+
+    use super::ImageKind;
+
+    #[test]
+    fn image_kind_array_layers() {
+        assert_eq!(ImageKind::Image2D.array_layers(), 1);
+        assert_eq!(ImageKind::Image2DArray { layers: 4 }.array_layers(), 4);
+        assert_eq!(ImageKind::Cubemap.array_layers(), 6);
+        assert_eq!(ImageKind::CubemapArray { count: 3 }.array_layers(), 18);
+    }
+
+    #[test]
+    fn image_kind_vk_view_type() {
+        assert_eq!(ImageKind::Image2D.vk_view_type(), vk::ImageViewType::TYPE_2D);
+        assert_eq!(
+            ImageKind::Image2DArray { layers: 2 }.vk_view_type(),
+            vk::ImageViewType::TYPE_2D_ARRAY
+        );
+        assert_eq!(ImageKind::Cubemap.vk_view_type(), vk::ImageViewType::CUBE);
+        assert_eq!(
+            ImageKind::CubemapArray { count: 1 }.vk_view_type(),
+            vk::ImageViewType::CUBE_ARRAY
+        );
+    }
+
+    #[test]
+    fn image_kind_create_flags() {
+        assert_eq!(ImageKind::Image2D.create_flags(), vk::ImageCreateFlags::empty());
+        assert_eq!(
+            ImageKind::Image2DArray { layers: 2 }.create_flags(),
+            vk::ImageCreateFlags::empty()
+        );
+        assert_eq!(
+            ImageKind::Cubemap.create_flags(),
+            vk::ImageCreateFlags::CUBE_COMPATIBLE
+        );
+        assert_eq!(
+            ImageKind::CubemapArray { count: 1 }.create_flags(),
+            vk::ImageCreateFlags::CUBE_COMPATIBLE
+        );
+    }
+}

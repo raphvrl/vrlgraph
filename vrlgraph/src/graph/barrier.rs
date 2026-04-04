@@ -455,4 +455,37 @@ mod tests {
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].src_access, vk::AccessFlags2::SHADER_WRITE);
     }
+
+    #[test]
+    fn representative_uniform_layers() {
+        let state = img_state_layers(
+            4,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+        );
+        let rep = state.representative();
+        assert_eq!(rep.layout, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        assert_eq!(rep.stage, vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT);
+        assert_eq!(rep.access, vk::AccessFlags2::COLOR_ATTACHMENT_WRITE);
+    }
+
+    #[test]
+    fn representative_divergent_layers() {
+        let mut state = img_state_layers(
+            4,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+        );
+        state.layers[1] = LayerState {
+            layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+            access: vk::AccessFlags2::SHADER_READ,
+        };
+        let rep = state.representative();
+        assert_eq!(rep.layout, vk::ImageLayout::UNDEFINED);
+        assert_eq!(rep.stage, vk::PipelineStageFlags2::NONE);
+        assert_eq!(rep.access, vk::AccessFlags2::NONE);
+    }
 }

@@ -224,3 +224,108 @@ impl BufferUsage {
         self.info().access
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ash::vk;
+
+    use super::{Access, BufferUsage};
+
+    #[test]
+    fn access_info_mappings() {
+        use vk::{
+            AccessFlags2 as A, ImageLayout as L, ImageUsageFlags as U, PipelineStageFlags2 as S,
+        };
+
+        let info = Access::ColorAttachment.info();
+        assert_eq!(info.layout, L::COLOR_ATTACHMENT_OPTIMAL);
+        assert_eq!(info.stage, S::COLOR_ATTACHMENT_OUTPUT);
+        assert_eq!(info.access, A::COLOR_ATTACHMENT_WRITE);
+        assert_eq!(info.usage, U::COLOR_ATTACHMENT);
+
+        let info = Access::DepthAttachment.info();
+        assert_eq!(info.layout, L::DEPTH_ATTACHMENT_OPTIMAL);
+        assert_eq!(info.stage, S::EARLY_FRAGMENT_TESTS | S::LATE_FRAGMENT_TESTS);
+        assert_eq!(info.access, A::DEPTH_STENCIL_ATTACHMENT_WRITE);
+        assert_eq!(info.usage, U::DEPTH_STENCIL_ATTACHMENT);
+
+        let info = Access::DepthStencilAttachment.info();
+        assert_eq!(info.layout, L::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        assert_eq!(info.stage, S::EARLY_FRAGMENT_TESTS | S::LATE_FRAGMENT_TESTS);
+        assert_eq!(info.access, A::DEPTH_STENCIL_ATTACHMENT_WRITE | A::DEPTH_STENCIL_ATTACHMENT_READ);
+        assert_eq!(info.usage, U::DEPTH_STENCIL_ATTACHMENT);
+
+        let info = Access::DepthRead.info();
+        assert_eq!(info.layout, L::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+        assert_eq!(info.stage, S::EARLY_FRAGMENT_TESTS);
+        assert_eq!(info.access, A::DEPTH_STENCIL_ATTACHMENT_READ);
+        assert_eq!(info.usage, U::SAMPLED);
+
+        let info = Access::ShaderRead.info();
+        assert_eq!(info.layout, L::SHADER_READ_ONLY_OPTIMAL);
+        assert_eq!(info.stage, S::FRAGMENT_SHADER);
+        assert_eq!(info.access, A::SHADER_READ);
+        assert_eq!(info.usage, U::SAMPLED);
+
+        let info = Access::ComputeRead.info();
+        assert_eq!(info.layout, L::GENERAL);
+        assert_eq!(info.stage, S::COMPUTE_SHADER);
+        assert_eq!(info.access, A::SHADER_READ);
+        assert_eq!(info.usage, U::STORAGE);
+
+        let info = Access::ComputeWrite.info();
+        assert_eq!(info.layout, L::GENERAL);
+        assert_eq!(info.stage, S::COMPUTE_SHADER);
+        assert_eq!(info.access, A::SHADER_WRITE);
+        assert_eq!(info.usage, U::STORAGE);
+
+        let info = Access::TransferSrc.info();
+        assert_eq!(info.layout, L::TRANSFER_SRC_OPTIMAL);
+        assert_eq!(info.stage, S::TRANSFER);
+        assert_eq!(info.access, A::TRANSFER_READ);
+        assert_eq!(info.usage, U::TRANSFER_SRC);
+
+        let info = Access::TransferDst.info();
+        assert_eq!(info.layout, L::TRANSFER_DST_OPTIMAL);
+        assert_eq!(info.stage, S::TRANSFER);
+        assert_eq!(info.access, A::TRANSFER_WRITE);
+        assert_eq!(info.usage, U::TRANSFER_DST);
+    }
+
+    #[test]
+    fn buffer_usage_info_mappings() {
+        use vk::{AccessFlags2 as A, PipelineStageFlags2 as S};
+
+        let info = BufferUsage::UniformRead.info();
+        assert_eq!(info.stage, S::VERTEX_SHADER | S::FRAGMENT_SHADER);
+        assert_eq!(info.access, A::UNIFORM_READ);
+
+        let info = BufferUsage::StorageRead.info();
+        assert_eq!(info.stage, S::VERTEX_SHADER | S::FRAGMENT_SHADER | S::COMPUTE_SHADER);
+        assert_eq!(info.access, A::SHADER_READ);
+
+        let info = BufferUsage::StorageWrite.info();
+        assert_eq!(info.stage, S::COMPUTE_SHADER);
+        assert_eq!(info.access, A::SHADER_WRITE);
+
+        let info = BufferUsage::VertexRead.info();
+        assert_eq!(info.stage, S::VERTEX_ATTRIBUTE_INPUT);
+        assert_eq!(info.access, A::VERTEX_ATTRIBUTE_READ);
+
+        let info = BufferUsage::IndexRead.info();
+        assert_eq!(info.stage, S::INDEX_INPUT);
+        assert_eq!(info.access, A::INDEX_READ);
+
+        let info = BufferUsage::IndirectRead.info();
+        assert_eq!(info.stage, S::DRAW_INDIRECT);
+        assert_eq!(info.access, A::INDIRECT_COMMAND_READ);
+
+        let info = BufferUsage::TransferSrc.info();
+        assert_eq!(info.stage, S::TRANSFER);
+        assert_eq!(info.access, A::TRANSFER_READ);
+
+        let info = BufferUsage::TransferDst.info();
+        assert_eq!(info.stage, S::TRANSFER);
+        assert_eq!(info.access, A::TRANSFER_WRITE);
+    }
+}
