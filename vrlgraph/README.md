@@ -164,6 +164,8 @@ graph.render_pass("shadow_map")
     .execute(move |cmd, res| {
         cmd.bind_graphics_pipeline(res.pipeline(shadow_pipeline));
         cmd.set_viewport_scissor(shadow_extent);
+        cmd.set_depth_bias_enable(true);
+        cmd.set_depth_bias(1.25, 0.0, 1.75);
         cmd.bind_vertex_buffer(res.buffer(vertex_buffer), 0);
         cmd.bind_index_buffer(res.buffer(index_buffer), 0);
         cmd.draw_indexed(index_count, 1, 0, 0);
@@ -614,7 +616,7 @@ cmd.set_scissor(vk::Rect2D { offset: vk::Offset2D::default(), extent: frame.exte
 
 ### Dynamic rasterizer state
 
-The pipeline uses extended dynamic state. Values persist across pipeline binds (OpenGL-like model) and are reset to defaults once at the beginning of each pass via `reset_dynamic_state`. Defaults: no culling, no depth test/write, counter-clockwise winding, triangle list topology, fill mode, blending disabled.
+The pipeline uses extended dynamic state. Values persist across pipeline binds (OpenGL-like model) and are reset to defaults once at the beginning of each pass via `reset_dynamic_state`. Defaults: no culling, no depth test/write, counter-clockwise winding, triangle list topology, fill mode, blending disabled, depth bias off.
 
 ```rust,ignore
 cmd.set_cull_mode(vk::CullModeFlags::BACK);
@@ -623,6 +625,9 @@ cmd.set_depth_test_enable(true);
 cmd.set_depth_write_enable(true);
 cmd.set_depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
 cmd.set_polygon_mode(vk::PolygonMode::FILL);
+
+cmd.set_depth_bias_enable(true);
+cmd.set_depth_bias(1.25, 0.0, 1.75); // constant_factor, clamp, slope_factor
 ```
 
 To set color blending for all attachments at once with additive defaults:

@@ -120,7 +120,7 @@ impl Cmd {
     /// Resets all dynamic rasterizer state to defaults. Called once at the
     /// beginning of each pass. Defaults:
     /// - Rasterizer discard: off
-    /// - Depth bias: off
+    /// - Depth bias: off (constant = 0, clamp = 0, slope = 0)
     /// - Primitive restart: off
     /// - Cull mode: none
     /// - Front face: counter-clockwise
@@ -132,6 +132,7 @@ impl Cmd {
     pub fn reset_dynamic_state(&self) {
         self.set_rasterizer_discard_enable(false);
         self.set_depth_bias_enable(false);
+        self.set_depth_bias(0.0, 0.0, 0.0);
         self.set_primitive_restart_enable(false);
 
         self.set_cull_mode(CullMode::NONE);
@@ -251,6 +252,13 @@ impl Cmd {
 
     pub fn set_depth_bias_enable(&self, enable: bool) {
         unsafe { self.device.cmd_set_depth_bias_enable(self.raw, enable) };
+    }
+
+    pub fn set_depth_bias(&self, constant_factor: f32, clamp: f32, slope_factor: f32) {
+        unsafe {
+            self.device
+                .cmd_set_depth_bias(self.raw, constant_factor, clamp, slope_factor)
+        };
     }
 
     pub fn set_primitive_restart_enable(&self, enable: bool) {
