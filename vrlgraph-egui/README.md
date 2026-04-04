@@ -93,9 +93,12 @@ The sole public type. Owns the graphics pipeline, sampler, texture map, and dyna
 | Method | Description |
 |---|---|
 | `new(graph: &mut Graph) -> Result<Self, GraphError>` | Creates the graphics pipeline from embedded SPIR-V shaders, allocates a linear sampler, and provisions initial 64 KB vertex and index buffers. |
+| `register_texture(&mut self, image: Image) -> egui::TextureId` | Registers a vrlgraph `Image` for use in egui widgets. The image must have `SAMPLED` usage. Returns a `TextureId::User` usable with `egui::Image` or `ui.image()`. Ownership stays with the caller. |
+| `update_texture(&mut self, id: egui::TextureId, image: Image)` | Replaces the image behind an existing user texture ID (e.g. after recreating a render target on resize). The old image is not destroyed. |
+| `unregister_texture(&mut self, id: egui::TextureId)` | Removes a user texture mapping. The image is not destroyed. |
 | `prepare(&mut self, graph: &mut Graph, textures_delta: &egui::TexturesDelta) -> Result<(), GraphError>` | Processes texture uploads (full and partial) and deferred frees. Must be called **before** `Graph::begin_frame`. |
 | `paint(&mut self, graph: &mut Graph, frame: &Frame, primitives: &[egui::ClippedPrimitive], pixels_per_point: f32) -> Result<(), GraphError>` | Tessellates primitives into vertices and indices, resizes buffers if needed, and records a render pass with scissor-clipped draw calls. Called between `begin_frame` and `end_frame`. |
-| `destroy(self, graph: &mut Graph)` | Frees all GPU resources: textures, vertex and index buffers, pipeline, and sampler. |
+| `destroy(self, graph: &mut Graph)` | Frees all GPU resources (managed textures, buffers, pipeline, sampler). User textures registered via `register_texture` are **not** destroyed — the caller owns them. |
 
 ---
 
@@ -127,6 +130,38 @@ Textures are stored as persistent `R8G8B8A8_SRGB` images with `SAMPLED | TRANSFE
 - **Full uploads** create a new persistent image and upload the pixel data.
 - **Partial updates** write a sub-region to an existing image via `upload_to_image`.
 - **Deferred deletion:** texture IDs from `textures_delta.free` are queued during `prepare` and actually destroyed on the next `prepare` call. This avoids destroying an image that may still be in flight on the GPU.
+
+### User textures
+
+You can display your own vrlgraph images (render targets, loaded textures, etc.) inside egui widgets by registering them:
+
+```rust,ignore
+// Create an offscreen render target
+let offscreen = graph.persistent_image("offscreen")
+    .format(vk::Format::R8G8B8A8_SRGB)
+    .extent(256, 256)
+    .usage(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::COLOR_ATTACHMENT)
+    .build()?;
+
+// Register it with the egui renderer
+let texture_id = egui_renderer.register_texture(offscreen);
+
+// Render to the offscreen image in your own pass
+graph.render_pass("offscreen")
+    .write(WithClearColor(offscreen, Access::ColorAttachment, [0.0, 0.0, 0.2, 1.0]))
+    .execute(move |cmd, res| {
+        cmd.bind_graphics_pipeline(res.pipeline(pipeline));
+        cmd.set_viewport_scissor(offscreen_extent);
+        cmd.draw(3, 1);
+    });
+
+// Display it in egui
+ui.image(egui::load::SizedTexture::new(texture_id, [256.0, 256.0]));
+```
+
+The render graph handles layout transitions automatically (`COLOR_ATTACHMENT_OPTIMAL` → `SHADER_READ_ONLY_OPTIMAL`).
+
+User textures are **not owned** by the renderer — `destroy()` and `unregister_texture()` will never free the underlying image. Use `update_texture()` if you need to swap the backing image (e.g. after a resize).
 
 ### Buffers
 
@@ -183,15 +218,23 @@ Each draw call sets a scissor rectangle derived from egui's `clip_rect`, scaled 
 
 ---
 
-## Demo
+## Examples
 
-A full integration example using `winit 0.30` and `egui-winit 0.31` is provided in `examples/demo/main.rs`:
+### demo
+
+Basic egui integration with text input, slider, and button:
 
 ```shell
 cargo run -p vrlgraph-egui --example demo
 ```
 
-The demo uses winit's `ApplicationHandler` trait to create a `Graph`, `EguiRenderer`, and `egui_winit::State` on resume. Window events are routed through `egui_state.on_window_event` first — consumed events skip application logic. The UI renders a simple panel with text input, a slider, and a button.
+### egui_texture
+
+Renders a colored triangle to an offscreen image and displays it inside an egui panel using `register_texture`:
+
+```shell
+cargo run -p vrlgraph-egui --example egui_texture
+```
 
 ---
 

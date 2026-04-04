@@ -36,6 +36,7 @@ pub struct EguiRenderer {
     sampler: Sampler,
     textures: FxHashMap<egui::TextureId, Image>,
     pending_frees: VecDeque<Vec<egui::TextureId>>,
+    next_user_id: u64,
     vertex_bufs: Vec<Buffer>,
     index_bufs: Vec<Buffer>,
     vertex_capacities: Vec<u64>,
@@ -90,6 +91,7 @@ impl EguiRenderer {
             sampler,
             textures: FxHashMap::default(),
             pending_frees: (0..n).map(|_| Vec::new()).collect(),
+            next_user_id: 0,
             vertex_bufs,
             index_bufs,
             vertex_capacities: vec![INITIAL_VERTEX_BYTES; n],
@@ -100,6 +102,25 @@ impl EguiRenderer {
         })
     }
 
+    pub fn register_texture(&mut self, image: Image) -> egui::TextureId {
+        let id = egui::TextureId::User(self.next_user_id);
+        self.next_user_id += 1;
+        self.textures.insert(id, image);
+        id
+    }
+
+    pub fn update_texture(&mut self, id: egui::TextureId, image: Image) {
+        assert!(matches!(id, egui::TextureId::User(_)));
+        assert!(self.textures.contains_key(&id));
+        self.textures.insert(id, image);
+    }
+
+    pub fn unregister_texture(&mut self, id: egui::TextureId) {
+        assert!(matches!(id, egui::TextureId::User(_)));
+        let removed = self.textures.remove(&id);
+        assert!(removed.is_some());
+    }
+
     /// Process texture uploads and frees. Must be called **before** [`Graph::begin_frame`].
     pub fn prepare(
         &mut self,
@@ -108,6 +129,9 @@ impl EguiRenderer {
     ) -> Result<(), GraphError> {
         if let Some(to_free) = self.pending_frees.pop_front() {
             for id in to_free {
+                if matches!(id, egui::TextureId::User(_)) {
+                    continue;
+                }
                 if let Some(tex) = self.textures.remove(&id) {
                     graph.destroy_image(tex);
                 }
@@ -260,12 +284,18 @@ impl EguiRenderer {
     pub fn destroy(mut self, graph: &mut Graph) {
         for frees in &mut self.pending_frees {
             for id in frees.drain(..) {
+                if matches!(id, egui::TextureId::User(_)) {
+                    continue;
+                }
                 if let Some(tex) = self.textures.remove(&id) {
                     graph.destroy_image(tex);
                 }
             }
         }
-        for (_, tex) in self.textures.drain() {
+        for (id, tex) in self.textures.drain() {
+            if matches!(id, egui::TextureId::User(_)) {
+                continue;
+            }
             graph.destroy_image(tex);
         }
         for &buf in &self.vertex_bufs {

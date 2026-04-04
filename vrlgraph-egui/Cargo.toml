@@ -23,3 +23,7 @@ tracing-subscriber = "0.3.23"
 [[example]]
 name = "demo"
 path = "examples/demo/main.rs"
+
+[[example]]
+name = "egui_texture"
+path = "examples/egui_texture/main.rs"
