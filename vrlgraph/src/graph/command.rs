@@ -67,9 +67,9 @@ impl Drop for CommandPool {
 /// You do not allocate or submit `Cmd` yourself — the graph creates one per
 /// pass and passes it to the closure you provide to [`PassSetup::execute`](crate::graph::PassSetup::execute).
 ///
-/// All rasterizer state (cull mode, depth test, blend, etc.) is dynamic.
+/// All rasterizer state (cull mode, depth test, depth clamp, blend, etc.) is dynamic.
 /// Binding a graphics pipeline resets it to sensible defaults (no culling,
-/// no depth test, no blending). Override the state after binding the pipeline.
+/// no depth test, no depth clamp, no blending). Override the state after binding the pipeline.
 pub struct Cmd {
     raw: vk::CommandBuffer,
     device: ash::Device,
@@ -127,6 +127,7 @@ impl Cmd {
     /// - Topology: triangle list
     /// - Depth test/write: off
     /// - Depth compare: less-or-equal
+    /// - Depth clamp: off
     /// - Polygon mode: fill
     /// - Blending: disabled (RGBA write mask, 1 attachment)
     pub fn reset_dynamic_state(&self) {
@@ -142,6 +143,7 @@ impl Cmd {
         self.set_depth_write_enable(false);
         self.set_depth_compare_op(CompareOp::LessOrEqual);
 
+        self.set_depth_clamp_enable(false);
         self.set_polygon_mode(PolygonMode::Fill);
         self.set_default_blend_state(1);
     }
@@ -217,6 +219,10 @@ impl Cmd {
 
     pub fn set_depth_compare_op(&self, op: CompareOp) {
         unsafe { self.device.cmd_set_depth_compare_op(self.raw, op.into()) };
+    }
+
+    pub fn set_depth_clamp_enable(&self, enable: bool) {
+        unsafe { self.ext_ds3.cmd_set_depth_clamp_enable(self.raw, enable) };
     }
 
     pub fn set_polygon_mode(&self, mode: PolygonMode) {

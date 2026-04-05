@@ -359,6 +359,7 @@ impl GpuDevice {
 
         let mut extended_dynamic_state3 =
             vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT::default()
+                .extended_dynamic_state3_depth_clamp_enable(true)
                 .extended_dynamic_state3_polygon_mode(true)
                 .extended_dynamic_state3_color_blend_enable(true)
                 .extended_dynamic_state3_color_blend_equation(true)
@@ -377,7 +378,9 @@ impl GpuDevice {
             .shader_sampled_image_array_non_uniform_indexing(true)
             .shader_storage_image_array_non_uniform_indexing(true);
 
-        let core_features = vk::PhysicalDeviceFeatures::default().shader_int64(true);
+        let core_features = vk::PhysicalDeviceFeatures::default()
+            .shader_int64(true)
+            .depth_clamp(true);
 
         let create_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(&queue_create_infos)

@@ -23,6 +23,7 @@ const DYNAMIC_STATES: &[vk::DynamicState] = &[
     vk::DynamicState::DEPTH_BIAS_ENABLE,
     vk::DynamicState::DEPTH_BIAS,
     vk::DynamicState::PRIMITIVE_RESTART_ENABLE,
+    vk::DynamicState::DEPTH_CLAMP_ENABLE_EXT,
     vk::DynamicState::POLYGON_MODE_EXT,
     vk::DynamicState::COLOR_BLEND_ENABLE_EXT,
     vk::DynamicState::COLOR_BLEND_EQUATION_EXT,
