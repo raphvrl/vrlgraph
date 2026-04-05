@@ -538,6 +538,98 @@ impl Graph {
         Ok(())
     }
 
+    pub(in crate::graph) fn upload_image_data_with_mips(
+        &mut self,
+        dst: ImageHandle,
+        mip_data: &[&[u8]],
+        base_extent: vk::Extent3D,
+    ) -> Result<(), GraphError> {
+        let mut packed = Vec::new();
+        let mut offsets = Vec::with_capacity(mip_data.len());
+        for level in mip_data {
+            offsets.push(packed.len());
+            packed.extend_from_slice(level);
+        }
+
+        let staging = self.create_staging(&packed, "staging_upload_mips")?;
+
+        let vk_img = self
+            .resources
+            .get_image(dst)
+            .expect("image just created")
+            .raw;
+        let stg_buf = self
+            .resources
+            .get_buffer(staging)
+            .expect("buffer just created")
+            .raw;
+
+        let mip_count = mip_data.len() as u32;
+
+        let regions: Vec<vk::BufferImageCopy> = (0..mip_data.len())
+            .map(|i| {
+                vk::BufferImageCopy::default()
+                    .buffer_offset(offsets[i] as vk::DeviceSize)
+                    .buffer_row_length(0)
+                    .buffer_image_height(0)
+                    .image_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        mip_level: i as u32,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .image_extent(vk::Extent3D {
+                        width: (base_extent.width >> i).max(1),
+                        height: (base_extent.height >> i).max(1),
+                        depth: 1,
+                    })
+            })
+            .collect();
+
+        self.one_shot_submit(|cmd| {
+            cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::NONE)
+                .src_access_mask(vk::AccessFlags2::NONE)
+                .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(vk_img)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: vk::REMAINING_MIP_LEVELS,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })]);
+
+            cmd.copy_buffer_to_image_region(stg_buf, vk_img, &regions);
+
+            cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(vk_img)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: mip_count,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })]);
+        })?;
+
+        self.destroy_staging(staging);
+        Ok(())
+    }
+
     pub fn upload_to_image(
         &mut self,
         image: Image,

@@ -333,6 +333,7 @@ pub struct TextureBuilder<'g> {
     graph: &'g mut Graph,
     label: String,
     pixels: Option<&'g [u8]>,
+    mip_data: Option<Vec<&'g [u8]>>,
     width: Option<u32>,
     height: Option<u32>,
     format: Option<vk::Format>,
@@ -345,6 +346,7 @@ impl<'g> TextureBuilder<'g> {
             graph,
             label,
             pixels: None,
+            mip_data: None,
             width: None,
             height: None,
             format: None,
@@ -354,6 +356,11 @@ impl<'g> TextureBuilder<'g> {
 
     pub fn pixels(mut self, data: &'g [u8]) -> Self {
         self.pixels = Some(data);
+        self
+    }
+
+    pub fn mip_data(mut self, levels: &[&'g [u8]]) -> Self {
+        self.mip_data = Some(levels.to_vec());
         self
     }
 
@@ -379,22 +386,45 @@ impl<'g> TextureBuilder<'g> {
             "load_texture().build() must be called outside the frame loop"
         );
 
-        let pixels = self.pixels.expect("TextureBuilder: pixels() is required");
         let width = self.width.expect("TextureBuilder: extent() is required");
         let height = self.height.expect("TextureBuilder: extent() is required");
         let format = self.format.expect("TextureBuilder: format() is required");
 
-        let mip_levels = if self.mip_levels == 0 {
-            compute_mip_levels(width, height)
-        } else {
-            self.mip_levels
-        };
+        assert!(
+            self.pixels.is_some() || self.mip_data.is_some(),
+            "TextureBuilder: pixels() or mip_data() is required"
+        );
+        assert!(
+            self.pixels.is_none() || self.mip_data.is_none(),
+            "TextureBuilder: pixels() and mip_data() are mutually exclusive"
+        );
 
         let extent = vk::Extent3D {
             width,
             height,
             depth: 1,
         };
+
+        let (mip_levels, usage) = if self.mip_data.is_some() {
+            let levels = self.mip_data.as_ref().unwrap().len() as u32;
+            (
+                levels,
+                vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+            )
+        } else {
+            let levels = if self.mip_levels == 0 {
+                compute_mip_levels(width, height)
+            } else {
+                self.mip_levels
+            };
+            (
+                levels,
+                vk::ImageUsageFlags::SAMPLED
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::TRANSFER_SRC,
+            )
+        };
+
         let desc = ImageDesc {
             extent,
             format,
@@ -405,9 +435,6 @@ impl<'g> TextureBuilder<'g> {
             usage: vk::ImageUsageFlags::empty(),
         };
 
-        let usage = vk::ImageUsageFlags::SAMPLED
-            | vk::ImageUsageFlags::TRANSFER_DST
-            | vk::ImageUsageFlags::TRANSFER_SRC;
         let aspect = vk::ImageAspectFlags::COLOR;
 
         let device = self.graph.device.ash_device().clone();
@@ -419,8 +446,14 @@ impl<'g> TextureBuilder<'g> {
             aspect,
         )?;
 
-        self.graph
-            .upload_image_data(handle, pixels, extent, mip_levels)?;
+        if let Some(ref mip_data) = self.mip_data {
+            self.graph
+                .upload_image_data_with_mips(handle, mip_data, extent)?;
+        } else {
+            let pixels = self.pixels.unwrap();
+            self.graph
+                .upload_image_data(handle, pixels, extent, mip_levels)?;
+        }
 
         let view = self
             .graph

@@ -297,14 +297,22 @@ let hdr_buffer = graph.persistent_image("hdr_buffer")
 
 ### Textures
 
-`load_texture` creates a persistent GPU image from raw pixel data and uploads it with automatic mipmap generation.
+`load_texture` creates a persistent GPU image from raw pixel data.
 The caller is responsible for image decoding (e.g. via the `image` or `stb_image` crate).
 
 ```rust,ignore
+// Automatic mipmap generation (blit-based)
 let albedo = graph.load_texture("wood_albedo")
     .pixels(&rgba_pixels)
     .extent(width, height)
     .format(vk::Format::R8G8B8A8_SRGB)
+    .build()?;
+
+// Pre-computed mipmaps (required for block-compressed formats like BC7)
+let albedo_bc7 = graph.load_texture("wood_albedo_bc7")
+    .mip_data(&[&mip0, &mip1, &mip2])
+    .extent(width, height)
+    .format(vk::Format::BC7_SRGB_BLOCK)
     .build()?;
 ```
 
@@ -329,10 +337,13 @@ The label is provided as the first argument to `persistent_image(label)` and `lo
 
 | Method | Required | Default | Description |
 |---|---|---|---|
-| `.pixels(&[u8])` | yes | — | Raw pixel data |
+| `.pixels(&[u8])` | yes* | — | Raw pixel data (mip 0); mipmaps generated via blit |
+| `.mip_data(&[&[u8]])` | yes* | — | Pre-computed mip levels (one slice per level) |
 | `.extent(w, h)` | yes | — | Width and height |
 | `.format(vk::Format)` | yes | — | Pixel format |
-| `.mip_levels(u32)` | no | auto | Number of mip levels (0 = auto from extent) |
+| `.mip_levels(u32)` | no | auto | Number of mip levels (0 = auto from extent; ignored with `mip_data`) |
+
+\* Exactly one of `.pixels()` or `.mip_data()` is required. Use `.mip_data()` for block-compressed formats (BC7, BC1, etc.) where GPU blit generation is not supported.
 
 **Important with bindless:** set `SAMPLED` and/or `STORAGE` explicitly in `.usage()` if you need to access the image by bindless index. The graph infers other usage flags (attachment, transfer) from pass accesses, but `SAMPLED`/`STORAGE` must be declared upfront so the bindless slot is allocated at creation time. Transient images are an exception — their usage is inferred from passes before slot allocation.
 
