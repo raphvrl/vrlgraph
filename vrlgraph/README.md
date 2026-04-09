@@ -154,6 +154,15 @@ graph.render_pass("lighting")
 
 The graph uses the declared accesses to determine pass order and insert the required pipeline barriers. You do not call `vkCmdPipelineBarrier` yourself.
 
+### Pass builder methods
+
+| Method | Description |
+|---|---|
+| `.read(impl ReadParam)` | Declare resource read access for this pass |
+| `.write(impl WriteParam)` | Declare resource write access for this pass |
+| `.multiview(u32)` | Enable multiview rendering with the given view mask |
+| `.execute(FnOnce(&mut Cmd, &FrameResources))` | Provide the closure that records GPU commands |
+
 ### Render passes
 
 `render_pass` is for fragment shader work. A pass that writes a color or depth attachment will have dynamic rendering (`VK_KHR_dynamic_rendering`) set up automatically for the images it writes.
@@ -387,6 +396,28 @@ let scratch = graph.storage_buffer("scratch").size(1 << 20).build()?;
 let stream = graph.storage_buffer("per_frame").size(256).streaming()?;
 ```
 
+### Host buffer builder methods (storage_buffer / uniform_buffer)
+
+| Method | Required | Default | Description |
+|---|---|---|---|
+| `.size(vk::DeviceSize)` | yes* | — | Buffer size in bytes |
+| `.data<T: ShaderType>(&T)` | yes* | — | Initial contents with shader-type padding |
+| `.build()` | — | — | Create the buffer |
+| `.streaming()` | — | — | Create a streaming buffer (one slot per frame in flight) |
+
+\* Exactly one of `.size()` or `.data()` is required.
+
+### GPU buffer builder methods (vertex_buffer / index_buffer)
+
+| Method | Required | Default | Description |
+|---|---|---|---|
+| `.size(vk::DeviceSize)` | yes* | — | Buffer size in bytes |
+| `.data<T: Pod>(&[T])` | yes* | — | Initial contents (staged to GPU) |
+| `.dynamic()` | no | `false` | Use CpuToGpu memory instead of GpuOnly (no staging, directly writable) |
+| `.build()` | — | — | Create the buffer |
+
+\* Exactly one of `.size()` or `.data()` is required.
+
 For cases that need custom usage flags or memory location, `create_buffer` remains available.
 
 ```rust,ignore
@@ -451,6 +482,18 @@ let pipeline = graph
     .build()?;
 ```
 
+### Graphics pipeline builder methods
+
+| Method | Required | Default | Description |
+|---|---|---|---|
+| `.vertex_shader(ShaderModule)` | yes | — | Vertex shader module |
+| `.fragment_shader(ShaderModule)` | yes | — | Fragment shader module |
+| `.color_formats(&[vk::Format])` | no | inferred from pass | Color attachment formats |
+| `.depth_format(vk::Format)` | no | — | Depth attachment format |
+| `.vertex_input::<V: VertexInput>()` | no | — | Vertex layout from derive macro |
+| `.vertex_input_raw(bindings, attributes)` | no | — | Raw Vulkan vertex input descriptors |
+| `.view_mask(u32)` | no | — | View mask for multiview rendering |
+
 Skip `vertex_input` entirely for shader-only draws (fullscreen triangles, compute-driven geometry, etc.).
 
 #### Format inference
@@ -511,6 +554,12 @@ let pipeline = graph
     .shader(cs)
     .build()?;
 ```
+
+### Compute pipeline builder methods
+
+| Method | Required | Description |
+|---|---|---|
+| `.shader(ShaderModule)` | yes | Compute shader module |
 
 ### Pipeline caching
 
@@ -748,6 +797,25 @@ let sampler = graph.create_sampler()
 graph.destroy_sampler(sampler);
 ```
 
+### Sampler builder methods
+
+| Method | Default | Description |
+|---|---|---|
+| `.mag_filter(Filter)` | `LINEAR` | Magnification filter |
+| `.min_filter(Filter)` | `LINEAR` | Minification filter |
+| `.filter(Filter)` | — | Set both mag and min filters |
+| `.mipmap_mode(MipmapMode)` | `LINEAR` | Mipmap filtering mode |
+| `.address_mode_u(AddressMode)` | — | U coordinate wrapping |
+| `.address_mode_v(AddressMode)` | — | V coordinate wrapping |
+| `.address_mode_w(AddressMode)` | — | W coordinate wrapping |
+| `.address_mode(AddressMode)` | — | Set all three address modes |
+| `.anisotropy(f32)` | disabled | Anisotropic filtering max ratio |
+| `.compare_op(CompareOp)` | disabled | Comparison function for shadow maps |
+| `.lod(min, max)` | — | LOD clamp range |
+| `.mip_lod_bias(f32)` | `0.0` | Mipmap LOD bias |
+| `.border_color(BorderColor)` | — | Border color for `CLAMP_TO_BORDER` |
+| `.unnormalized_coordinates()` | `false` | Use pixel coordinates instead of \[0,1\] |
+
 ---
 
 ## Pass timing
@@ -774,6 +842,17 @@ for timing in graph.pass_timings() {
 ## Initialization options
 
 `GraphBuilder` accepts the following options before calling `build`.
+
+| Method | Required | Default | Description |
+|---|---|---|---|
+| `.window(&impl HasWindowHandle + HasDisplayHandle)` | yes | — | Window and display handles |
+| `.size(width, height)` | yes | — | Initial swapchain dimensions |
+| `.validation(bool)` | no | `false` | Enable Vulkan validation layers |
+| `.present_mode(PresentMode)` | no | `Fifo` | Presentation mode (see table below) |
+| `.gpu(GpuPreference)` | no | `HighPerformance` | GPU selection hint (see table below) |
+| `.frames_in_flight(usize)` | no | `2` | Pipeline depth |
+| `.pipeline_cache_path(impl Into<PathBuf>)` | no | none | Persist pipeline cache to disk |
+| `.srgb(bool)` | no | `true` | Request sRGB swapchain format |
 
 ```rust,ignore
 let graph = Graph::builder()
