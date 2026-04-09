@@ -7,8 +7,9 @@ use syn::{Data, DeriveInput, Fields, Ident, parse_macro_input};
 
 /// Derives [`VertexInput`] for a `#[repr(C)]` struct.
 ///
-/// Each field must implement [`VertexAttribute`] or carry a `#[format(FORMAT)]`
-/// attribute to override the inferred Vulkan format.
+/// Automatically generates `Clone`, `Copy`,
+/// [`Pod`](::bytemuck::Pod), and [`Zeroable`](::bytemuck::Zeroable)
+/// implementations. Every field must be [`Pod`](::bytemuck::Pod)-safe.
 ///
 /// # Attributes
 ///
@@ -21,7 +22,7 @@ use syn::{Data, DeriveInput, Fields, Ident, parse_macro_input};
 ///
 /// ```rust,ignore
 /// #[repr(C)]
-/// #[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+/// #[derive(VertexInput)]
 /// struct Vertex {
 ///     pos: [f32; 3],
 ///     uv:  [f32; 2],
@@ -58,6 +59,8 @@ fn impl_vertex_input(input: DeriveInput) -> syn::Result<TokenStream2> {
         }
     };
 
+    let field_types: Vec<&syn::Type> = named_fields.iter().map(|f| &f.ty).collect();
+
     let attribute_entries: Vec<TokenStream2> = named_fields
         .iter()
         .enumerate()
@@ -83,6 +86,22 @@ fn impl_vertex_input(input: DeriveInput) -> syn::Result<TokenStream2> {
         .collect::<syn::Result<_>>()?;
 
     Ok(quote! {
+        impl Clone for #name {
+            fn clone(&self) -> Self { *self }
+        }
+
+        impl Copy for #name {}
+
+        const _: () = {
+            fn _assert_pod<T: ::vrlgraph::bytemuck::Pod>() {}
+            fn _check() {
+                #( _assert_pod::<#field_types>(); )*
+            }
+        };
+
+        unsafe impl ::vrlgraph::bytemuck::Zeroable for #name {}
+        unsafe impl ::vrlgraph::bytemuck::Pod for #name {}
+
         impl ::vrlgraph::VertexInput for #name {
             const BINDINGS: &'static [::vrlgraph::ash::vk::VertexInputBindingDescription] = &[
                 ::vrlgraph::ash::vk::VertexInputBindingDescription {

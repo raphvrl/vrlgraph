@@ -11,8 +11,8 @@ pub trait VertexAttribute {
 
 /// Describes the full vertex input layout for a vertex struct.
 ///
-/// Derive this trait with `#[derive(VertexInput)]` on any `#[repr(C)]` struct
-/// whose fields all implement [`VertexAttribute`].
+/// Derive this trait with `#[derive(VertexInput)]` on any `#[repr(C)]` struct.
+/// The derive also generates `Clone`, `Copy`, `Pod`, and `Zeroable`.
 pub trait VertexInput {
     const BINDINGS: &'static [vk::VertexInputBindingDescription];
     const ATTRIBUTES: &'static [vk::VertexInputAttributeDescription];

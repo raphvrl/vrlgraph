@@ -3,13 +3,12 @@ mod common;
 
 use std::time::Instant;
 
-use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec2, Vec3};
 use vrlgraph::prelude::*;
 use winit::window::{Window, WindowAttributes};
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+#[derive(VertexInput)]
 struct Vertex {
     pos: Vec2,
 }

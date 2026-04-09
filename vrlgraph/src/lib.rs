@@ -8,6 +8,7 @@ pub mod types;
 pub mod vertex;
 
 pub use ash;
+pub use bytemuck;
 
 pub use shader::{ShaderType, round_up};
 pub use vertex::{VertexAttribute, VertexInput};

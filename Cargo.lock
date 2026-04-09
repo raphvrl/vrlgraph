@@ -2485,7 +2485,6 @@ name = "vrlgraph-egui"
 version = "0.1.0"
 dependencies = [
  "ash",
- "bytemuck",
  "egui",
  "egui-winit",
  "gpu-allocator",

@@ -432,7 +432,7 @@ Derive `VertexInput` on your vertex struct. The macro generates the binding and 
 
 ```rust,ignore
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+#[derive(VertexInput)]
 struct Vertex {
     pos:    [f32; 3],
     normal: [f32; 3],
@@ -474,7 +474,7 @@ Use `#[format(FORMAT)]` on a field when the type cannot be inferred automaticall
 
 ```rust,ignore
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+#[derive(VertexInput)]
 struct Vertex {
     pos: glam::Vec3,                    // inferred if `glam` feature is enabled
     #[format(R16G16_SFLOAT)]
@@ -486,7 +486,7 @@ Use `#[vertex_input(rate = instance)]` on the struct for per-instance data:
 
 ```rust,ignore
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+#[derive(VertexInput)]
 #[vertex_input(rate = instance)]
 struct InstanceData {
     model_col0: [f32; 4],

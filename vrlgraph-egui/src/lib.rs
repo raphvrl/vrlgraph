@@ -3,7 +3,6 @@
 use std::collections::VecDeque;
 
 use ash::vk;
-use bytemuck::{Pod, Zeroable};
 use gpu_allocator::MemoryLocation;
 use rustc_hash::FxHashMap;
 
@@ -16,7 +15,7 @@ const INITIAL_VERTEX_BYTES: u64 = 64 * 1024;
 const INITIAL_INDEX_BYTES: u64 = 64 * 1024;
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, VertexInput)]
+#[derive(VertexInput)]
 struct EguiVertex {
     pos: [f32; 2],
     uv: [f32; 2],
