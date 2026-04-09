@@ -360,35 +360,34 @@ ImageKind::CubemapArray { count: 4 }      // array of cubemaps
 
 ## Buffers
 
-### Convenience buffer methods
+### Buffer builders
 
-The typed methods handle usage flags and memory location automatically.
+Buffers are created through a builder pattern. They are empty by default — call `.data()` to provide initial contents.
 
 ```rust,ignore
 // Storage buffer (CpuToGpu) — SHADER_DEVICE_ADDRESS included automatically
-let params = graph.storage_buffer("params", &data)?;
-
-// Storage buffer from a Pod slice (e.g. raw arrays)
-let colors = graph.storage_buffer_slice("colors", &color_data)?;
+let params = graph.storage_buffer("params").data(&data).build()?;
 
 // Uniform buffer (CpuToGpu) — update each frame with write_buffer
-let ubo = graph.uniform_buffer("scene_ubo", &uniforms)?;
+let ubo = graph.uniform_buffer("scene_ubo").data(&uniforms).build()?;
 graph.write_buffer(ubo, &new_uniforms);
 
 // Vertex / index buffers (GpuOnly) — data staged automatically via a one-shot transfer
-let verts   = graph.vertex_buffer("mesh_verts", &vertices)?;
-let indices = graph.index_buffer("mesh_indices", &idx_data)?;
+let verts   = graph.vertex_buffer("mesh_verts").data(&vertices).build()?;
+let indices = graph.index_buffer("mesh_indices").data(&idx_data).build()?;
 
 // Vertex / index buffers (CpuToGpu) — no staging, directly writable for dynamic geometry
-let chunk_verts   = graph.vertex_buffer_dynamic("chunk_verts", &vertices)?;
-let chunk_indices = graph.index_buffer_dynamic("chunk_indices", &idx_data)?;
+let chunk_verts = graph.vertex_buffer("chunk_verts").data(&vertices).dynamic().build()?;
 graph.write_buffer_slice(chunk_verts, &new_vertices);
 
 // Empty storage buffer (e.g. compute scratch space)
-let scratch = graph.storage_buffer_empty("scratch", 1 << 20)?;
+let scratch = graph.storage_buffer("scratch").size(1 << 20).build()?;
+
+// Streaming buffer (one slot per frame in flight, auto-rotated)
+let stream = graph.storage_buffer("per_frame").size(256).streaming()?;
 ```
 
-For cases that need custom usage flags or memory location, `create_buffer` and `upload_buffer` remain available.
+For cases that need custom usage flags or memory location, `create_buffer` remains available.
 
 ```rust,ignore
 let buf = graph.create_buffer(&BufferDesc {
@@ -592,7 +591,7 @@ void main() {
 Structured buffers are accessed via Buffer Device Address (BDA). All buffers carry a device address — retrieve it with `buffer_device_address` and pass it as a `uint64_t` in the push constants.
 
 ```rust,ignore
-let buf = graph.storage_buffer("my_data", &data)?;
+let buf = graph.storage_buffer("my_data").data(&data).build()?;
 
 let addr = graph.buffer_device_address(buf);
 ```
@@ -699,7 +698,7 @@ struct Particle {
 Dedicated API methods handle serialization transparently:
 
 ```rust,ignore
-graph.uniform_buffer("camera", &cam)?;       // allocate + write padded
+graph.uniform_buffer("camera").data(&cam).build()?; // allocate + write padded
 graph.write_buffer(buf, &cam);               // update existing buffer
 cmd.push_constants(&cam);                    // push constants with padding
 ```

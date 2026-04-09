@@ -74,16 +74,21 @@ impl common::Example for State {
             .present_mode(PresentMode::Fifo)
             .build()?;
 
-        let vertex_buf = graph.vertex_buffer("quad_verts", &VERTICES)?;
-        let index_buf = graph.index_buffer("quad_indices", &INDICES)?;
+        let vertex_buf = graph.vertex_buffer("quad_verts").data(&VERTICES).build()?;
+        let index_buf = graph.index_buffer("quad_indices").data(&INDICES).build()?;
 
-        let transform_buf = graph.uniform_buffer(
-            "transform",
-            &Transform {
+        let transform_buf = graph
+            .uniform_buffer("transform")
+            .data(&Transform {
                 matrix: Mat4::IDENTITY,
-            },
-        )?;
-        let colors_buf = graph.storage_buffer_slice("colors", &COLORS)?;
+            })
+            .build()?;
+
+        let colors_buf = graph
+            .storage_buffer("colors")
+            .size(std::mem::size_of_val(&COLORS) as u64)
+            .build()?;
+        graph.write_buffer_slice(colors_buf, &COLORS);
 
         let vs = graph.shader_module("shaders/mesh.vert.spv", "main")?;
         let fs = graph.shader_module("shaders/mesh.frag.spv", "main")?;

@@ -7,6 +7,7 @@
 mod access;
 mod barrier;
 mod bindless;
+mod buffer;
 mod builder;
 mod command;
 mod dag;
@@ -46,6 +47,7 @@ use resources::update_bindless;
 use sync::{FrameSync, SyncError};
 use transient::TransientCache;
 
+pub use self::buffer::{GpuBufferBuilder, HostBufferBuilder};
 pub use self::image::{Image, TextureBuilder};
 pub use crate::resource::StreamingBufferHandle;
 pub use access::{Access, BufferUsage, LoadOp};
