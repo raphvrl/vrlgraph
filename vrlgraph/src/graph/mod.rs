@@ -14,11 +14,8 @@ mod dag;
 mod frame;
 mod image;
 mod pass;
-mod pipeline;
-mod pipelines;
+pub(crate) mod pipeline;
 mod query;
-#[cfg(debug_assertions)]
-mod reload;
 mod resources;
 mod sampler;
 mod sync;
@@ -42,7 +39,7 @@ use command::{CommandError, CommandPool};
 use pass::RecordedPass;
 use query::TimestampState;
 #[cfg(debug_assertions)]
-use reload::{PipelineDesc, ShaderWatcher};
+use pipeline::reload::{PipelineDesc, ShaderWatcher};
 use resources::update_bindless;
 use sync::{FrameSync, SyncError};
 use transient::TransientCache;
@@ -215,6 +212,9 @@ pub struct Graph {
     pub(crate) shader_module_paths: FxHashMap<ShaderModuleHandle, PathBuf>,
     #[cfg(debug_assertions)]
     pub(crate) shader_watcher: ShaderWatcher,
+    #[cfg(debug_assertions)]
+    pub(crate) shader_push_constants:
+        FxHashMap<ShaderModuleHandle, pipeline::validate::ReflectedPushConstants>,
     pub(crate) device: GpuDevice,
 }
 
@@ -292,6 +292,8 @@ impl Graph {
             shader_module_paths: FxHashMap::default(),
             #[cfg(debug_assertions)]
             shader_watcher: ShaderWatcher::default(),
+            #[cfg(debug_assertions)]
+            shader_push_constants: FxHashMap::default(),
         })
     }
 

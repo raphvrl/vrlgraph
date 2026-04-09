@@ -1,3 +1,11 @@
+mod shader;
+
+#[cfg(debug_assertions)]
+pub(crate) mod validate;
+
+#[cfg(debug_assertions)]
+pub(super) mod reload;
+
 use std::ffi::{CStr, CString};
 use std::path::{Path, PathBuf};
 
@@ -7,7 +15,7 @@ use crate::resource::{GpuPipeline, Pipeline, ShaderModule};
 use crate::vertex::VertexInput;
 
 #[cfg(debug_assertions)]
-use super::reload::{PipelineDesc, PipelineKind};
+use self::reload::{PipelineDesc, PipelineKind};
 use super::{Graph, GraphError};
 
 const DYNAMIC_STATES: &[vk::DynamicState] = &[
@@ -105,6 +113,8 @@ pub(super) fn create_graphics_pipeline_raw(
     Ok(GpuPipeline {
         pipeline: raw[0],
         layout,
+        #[cfg(debug_assertions)]
+        reflected_pc: None,
     })
 }
 
@@ -133,18 +143,11 @@ pub(super) fn create_compute_pipeline_raw(
     Ok(GpuPipeline {
         pipeline: raw[0],
         layout,
+        #[cfg(debug_assertions)]
+        reflected_pc: None,
     })
 }
 
-/// Builder for a graphics pipeline.
-///
-/// Obtained from [`Graph::graphics_pipeline`]. At minimum you must provide a
-/// vertex and a fragment shader module. All rasterizer state is dynamic — you
-/// set it per draw call via [`Cmd`](super::command::Cmd).
-///
-/// Color formats default to the swapchain format. Override with
-/// [`color_formats`](PipelineBuilder::color_formats) when rendering to
-/// off-screen targets.
 pub struct PipelineBuilder<'g> {
     graph: &'g mut Graph,
     label: String,
@@ -173,47 +176,32 @@ impl<'g> PipelineBuilder<'g> {
         }
     }
 
-    /// Sets the vertex shader module. Required.
     pub fn vertex_shader(mut self, module: ShaderModule) -> Self {
         self.vertex = Some(module);
         self
     }
 
-    /// Sets the fragment shader module. Required.
     pub fn fragment_shader(mut self, module: ShaderModule) -> Self {
         self.fragment = Some(module);
         self
     }
 
-    /// Overrides the color attachment formats. By default the swapchain format
-    /// is used. Set this when the pipeline renders to off-screen images.
     pub fn color_formats(mut self, formats: &[vk::Format]) -> Self {
         self.color_formats = formats.to_vec();
         self
     }
 
-    /// Sets the depth attachment format. Required if the pass writes a depth
-    /// attachment.
     pub fn depth_format(mut self, format: vk::Format) -> Self {
         self.depth_format = Some(format);
         self
     }
 
-    /// Declares the vertex input layout from a type that implements [`VertexInput`].
-    ///
-    /// Use `#[derive(VertexInput)]` on your vertex struct and call
-    /// `.vertex_input::<MyVertex>()`. Skip this for shader-only draws (e.g.
-    /// fullscreen triangles with no vertex buffer).
     pub fn vertex_input<V: VertexInput>(mut self) -> Self {
         self.vertex_bindings = V::BINDINGS.to_vec();
         self.vertex_attributes = V::ATTRIBUTES.to_vec();
         self
     }
 
-    /// Raw override for vertex input — accepts Vulkan descriptors directly.
-    ///
-    /// Prefer [`vertex_input`](Self::vertex_input) with `#[derive(VertexInput)]`.
-    /// Use this only when the layout cannot be expressed as a `VertexInput` impl.
     pub fn vertex_input_raw(
         mut self,
         bindings: &[vk::VertexInputBindingDescription],
@@ -229,8 +217,6 @@ impl<'g> PipelineBuilder<'g> {
         self
     }
 
-    /// Compiles the pipeline and registers it with the graph.
-    /// Returns a [`Pipeline`] that can be passed to [`FrameResources::pipeline`](super::pass::FrameResources::pipeline).
     pub fn build(self) -> Result<Pipeline, GraphError> {
         let vertex = self
             .vertex
@@ -257,7 +243,8 @@ impl<'g> PipelineBuilder<'g> {
 
         let layout = self.graph.bindless.pipeline_layout();
 
-        let gpu_pipeline = create_graphics_pipeline_raw(
+        #[allow(unused_mut)]
+        let mut gpu_pipeline = create_graphics_pipeline_raw(
             self.graph.ash_device(),
             self.graph.pipeline_cache(),
             layout,
@@ -271,6 +258,16 @@ impl<'g> PipelineBuilder<'g> {
             &self.vertex_attributes,
             self.view_mask,
         )?;
+
+        #[cfg(debug_assertions)]
+        {
+            gpu_pipeline.reflected_pc = self
+                .graph
+                .shader_push_constants
+                .get(&vertex.0)
+                .or_else(|| self.graph.shader_push_constants.get(&fragment.0))
+                .cloned();
+        }
 
         if let Some(du) = self.graph.device().debug_utils() {
             let name = CString::new(self.label.as_str()).unwrap();
@@ -302,9 +299,6 @@ impl<'g> PipelineBuilder<'g> {
     }
 }
 
-/// Builder for a compute pipeline.
-///
-/// Obtained from [`Graph::compute_pipeline`]. Provide a compute shader module.
 pub struct ComputePipelineBuilder<'g> {
     graph: &'g mut Graph,
     label: String,
@@ -320,13 +314,11 @@ impl<'g> ComputePipelineBuilder<'g> {
         }
     }
 
-    /// Sets the compute shader module. Required.
     pub fn shader(mut self, module: ShaderModule) -> Self {
         self.shader = Some(module);
         self
     }
 
-    /// Compiles the pipeline and registers it with the graph.
     pub fn build(self) -> Result<Pipeline, GraphError> {
         let shader = self
             .shader
@@ -342,13 +334,23 @@ impl<'g> ComputePipelineBuilder<'g> {
 
         let layout = self.graph.bindless.pipeline_layout();
 
-        let gpu_pipeline = create_compute_pipeline_raw(
+        #[allow(unused_mut)]
+        let mut gpu_pipeline = create_compute_pipeline_raw(
             self.graph.ash_device(),
             self.graph.pipeline_cache(),
             layout,
             compute_module,
             &compute_entry,
         )?;
+
+        #[cfg(debug_assertions)]
+        {
+            gpu_pipeline.reflected_pc = self
+                .graph
+                .shader_push_constants
+                .get(&shader.0)
+                .cloned();
+        }
 
         if let Some(du) = self.graph.device().debug_utils() {
             let name = CString::new(self.label.as_str()).unwrap();

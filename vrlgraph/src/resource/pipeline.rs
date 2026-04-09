@@ -1,8 +1,13 @@
 use ash::vk;
 
+#[cfg(debug_assertions)]
+use crate::graph::pipeline::validate::ReflectedPushConstants;
+
 pub struct GpuPipeline {
     pub(crate) pipeline: vk::Pipeline,
     pub(crate) layout: vk::PipelineLayout,
+    #[cfg(debug_assertions)]
+    pub(crate) reflected_pc: Option<ReflectedPushConstants>,
 }
 
 impl GpuPipeline {

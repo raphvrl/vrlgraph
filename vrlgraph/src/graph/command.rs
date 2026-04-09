@@ -6,6 +6,10 @@ use thiserror::Error;
 
 use crate::resource::{GpuBuffer, GpuPipeline};
 use crate::types::{ColorWriteMask, CompareOp, CullMode, FrontFace, PolygonMode, Topology};
+#[cfg(debug_assertions)]
+use std::cell::Cell;
+#[cfg(debug_assertions)]
+use super::pipeline::validate::ReflectedPushConstants;
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -78,6 +82,10 @@ pub struct Cmd {
     debug_utils: Option<ash::ext::debug_utils::Device>,
     bound_layout: Option<vk::PipelineLayout>,
     bound_bind_point: vk::PipelineBindPoint,
+    #[cfg(debug_assertions)]
+    reflected_pc: Option<ReflectedPushConstants>,
+    #[cfg(debug_assertions)]
+    pc_mismatch_warned: Cell<bool>,
 }
 
 impl Cmd {
@@ -94,6 +102,10 @@ impl Cmd {
             debug_utils,
             bound_layout: None,
             bound_bind_point: vk::PipelineBindPoint::GRAPHICS,
+            #[cfg(debug_assertions)]
+            reflected_pc: None,
+            #[cfg(debug_assertions)]
+            pc_mismatch_warned: Cell::new(false),
         }
     }
 
@@ -115,6 +127,11 @@ impl Cmd {
         };
         self.bound_layout = Some(pipe.layout);
         self.bound_bind_point = vk::PipelineBindPoint::GRAPHICS;
+        #[cfg(debug_assertions)]
+        {
+            self.reflected_pc = pipe.reflected_pc.clone();
+            self.pc_mismatch_warned.set(false);
+        }
     }
 
     /// Resets all dynamic rasterizer state to defaults. Called once at the
@@ -156,6 +173,11 @@ impl Cmd {
         };
         self.bound_layout = Some(pipe.layout);
         self.bound_bind_point = vk::PipelineBindPoint::COMPUTE;
+        #[cfg(debug_assertions)]
+        {
+            self.reflected_pc = pipe.reflected_pc.clone();
+            self.pc_mismatch_warned.set(false);
+        }
     }
 
     /// Sets the viewport. Use [`set_viewport_scissor`](Cmd::set_viewport_scissor)
@@ -295,6 +317,19 @@ impl Cmd {
     ///
     /// A pipeline must be bound first.
     pub fn push_constants<T: crate::ShaderType>(&self, data: &T) {
+        #[cfg(debug_assertions)]
+        if !self.pc_mismatch_warned.get() {
+            if let Some(reflected) = &self.reflected_pc {
+                if T::PADDED_SIZE != reflected.total_size {
+                    self.pc_mismatch_warned.set(true);
+                    super::pipeline::validate::validate_push_constants(
+                        reflected,
+                        T::PADDED_SIZE,
+                        std::any::type_name::<T>(),
+                    );
+                }
+            }
+        }
         let mut buf = [0u8; 256];
         data.write_padded(&mut buf[..T::PADDED_SIZE]);
         self.push_constants_raw(&buf[..T::PADDED_SIZE]);

@@ -3,23 +3,17 @@ use std::path::Path;
 
 use ash::vk;
 
-use super::pipeline::{ComputePipelineBuilder, PipelineBuilder, load_spv, resolve_shader_path};
+use super::{ComputePipelineBuilder, PipelineBuilder, load_spv, resolve_shader_path};
 #[cfg(debug_assertions)]
-use super::pipeline::{create_compute_pipeline_raw, create_graphics_pipeline_raw};
+use super::{create_compute_pipeline_raw, create_graphics_pipeline_raw};
 #[cfg(debug_assertions)]
 use super::reload::{PipelineDesc, PipelineKind};
-use super::{Graph, GraphError};
+use crate::graph::{Graph, GraphError};
 #[cfg(debug_assertions)]
 use crate::resource::ShaderModuleHandle;
 use crate::resource::{GpuPipeline, GpuShaderModule, Pipeline, PipelineHandle, ShaderModule};
 
 impl Graph {
-    /// Loads a SPIR-V shader from `path`, registers it as a [`ShaderModule`]
-    /// in the resource pool, and returns an opaque handle to it.
-    ///
-    /// `entry` is the name of the entry-point function in the shader (e.g.
-    /// `"main"`, `"vs_main"`, `"fs_main"`). Relative paths are resolved from
-    /// the directory of the current executable.
     pub fn shader_module(
         &mut self,
         path: impl AsRef<Path>,
@@ -27,13 +21,19 @@ impl Graph {
     ) -> Result<ShaderModule, GraphError> {
         let resolved = resolve_shader_path(path.as_ref());
 
+        let spv = if self.spirv_module_cache.contains_key(&resolved) {
+            None
+        } else {
+            Some(load_spv(&resolved)?)
+        };
+
         let module = if let Some(&cached) = self.spirv_module_cache.get(&resolved) {
             cached
         } else {
-            let spv = load_spv(&resolved)?;
+            let code = spv.as_ref().unwrap();
             let m = unsafe {
                 self.ash_device()
-                    .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&spv), None)
+                    .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(code), None)
             }?;
             self.spirv_module_cache.insert(resolved.clone(), m);
             m
@@ -49,6 +49,11 @@ impl Graph {
         {
             self.shader_watcher.watch(&resolved);
             self.shader_module_paths.insert(handle, resolved);
+            if let Some(spv) = &spv {
+                if let Some(pc) = super::validate::reflect_push_constants(spv) {
+                    self.shader_push_constants.insert(handle, pc);
+                }
+            }
         }
 
         Ok(ShaderModule(handle))
@@ -77,13 +82,14 @@ impl Graph {
             .resources
             .insert_shader_module(GpuShaderModule { module, entry });
 
+        #[cfg(debug_assertions)]
+        if let Some(pc) = super::validate::reflect_push_constants(code) {
+            self.shader_push_constants.insert(handle, pc);
+        }
+
         Ok(ShaderModule(handle))
     }
 
-    /// Destroys a shader module handle. For file-backed modules the underlying
-    /// `VkShaderModule` is shared via the path cache and freed when the graph
-    /// is dropped. For SPIR-V byte-backed modules we are the sole owner, so
-    /// the Vulkan object is destroyed immediately.
     pub fn destroy_shader_module(&mut self, handle: ShaderModule) {
         if let Some(m) = self.resources.get_shader_module(handle.0) {
             let vk_module = m.module;
@@ -93,7 +99,10 @@ impl Graph {
         }
         self.resources.destroy_shader_module(handle.0);
         #[cfg(debug_assertions)]
-        self.shader_module_paths.remove(&handle.0);
+        {
+            self.shader_module_paths.remove(&handle.0);
+            self.shader_push_constants.remove(&handle.0);
+        }
     }
 
     pub fn graphics_pipeline(&mut self, label: impl Into<String>) -> PipelineBuilder<'_> {
@@ -140,30 +149,47 @@ impl Graph {
         let mut affected_modules: Vec<ShaderModuleHandle> = Vec::new();
 
         for path in &changed_paths {
-            match load_spv(path).and_then(|spv| unsafe {
+            let spv = match load_spv(path) {
+                Ok(spv) => spv,
+                Err(e) => {
+                    tracing::error!("shader module reload failed for {}: {e}", path.display());
+                    continue;
+                }
+            };
+
+            let new_vk_module = match unsafe {
                 self.device
                     .ash_device()
                     .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&spv), None)
-                    .map_err(GraphError::from)
-            }) {
-                Ok(new_vk_module) => {
-                    if let Some(old) = self.spirv_module_cache.insert(path.clone(), new_vk_module) {
-                        unsafe { self.device.ash_device().destroy_shader_module(old, None) };
-                    }
-                    let handles: Vec<ShaderModuleHandle> = self
-                        .shader_module_paths
-                        .iter()
-                        .filter(|(_, p)| *p == path)
-                        .map(|(h, _)| *h)
-                        .collect();
-                    for handle in handles {
-                        self.resources
-                            .update_shader_module_vk(handle, new_vk_module);
-                        affected_modules.push(handle);
-                    }
-                }
+            } {
+                Ok(m) => m,
                 Err(e) => {
-                    tracing::error!("shader module reload failed for {}: {e}", path.display())
+                    tracing::error!("shader module reload failed for {}: {e}", path.display());
+                    continue;
+                }
+            };
+
+            if let Some(old) = self.spirv_module_cache.insert(path.clone(), new_vk_module) {
+                unsafe { self.device.ash_device().destroy_shader_module(old, None) };
+            }
+
+            let handles: Vec<ShaderModuleHandle> = self
+                .shader_module_paths
+                .iter()
+                .filter(|(_, p)| *p == path)
+                .map(|(h, _)| *h)
+                .collect();
+
+            let reflected_pc = super::validate::reflect_push_constants(&spv);
+
+            for handle in handles {
+                self.resources
+                    .update_shader_module_vk(handle, new_vk_module);
+                affected_modules.push(handle);
+                if let Some(pc) = &reflected_pc {
+                    self.shader_push_constants.insert(handle, pc.clone());
+                } else {
+                    self.shader_push_constants.remove(&handle);
                 }
             }
         }
@@ -237,7 +263,7 @@ impl Graph {
                 let frag_module = frag.module;
                 let frag_entry = frag.entry.clone();
 
-                create_graphics_pipeline_raw(
+                let mut pipe = create_graphics_pipeline_raw(
                     device,
                     self.pipeline_cache,
                     layout,
@@ -250,7 +276,15 @@ impl Graph {
                     vertex_bindings,
                     vertex_attributes,
                     *view_mask,
-                )
+                )?;
+
+                pipe.reflected_pc = self
+                    .shader_push_constants
+                    .get(vertex)
+                    .or_else(|| self.shader_push_constants.get(fragment))
+                    .cloned();
+
+                Ok(pipe)
             }
 
             PipelineKind::Compute { shader } => {
@@ -261,13 +295,17 @@ impl Graph {
                 let compute_module = sm.module;
                 let compute_entry = sm.entry.clone();
 
-                create_compute_pipeline_raw(
+                let mut pipe = create_compute_pipeline_raw(
                     device,
                     self.pipeline_cache,
                     layout,
                     compute_module,
                     &compute_entry,
-                )
+                )?;
+
+                pipe.reflected_pc = self.shader_push_constants.get(shader).cloned();
+
+                Ok(pipe)
             }
         }
     }
