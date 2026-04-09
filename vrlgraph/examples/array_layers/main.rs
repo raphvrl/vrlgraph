@@ -116,7 +116,7 @@ impl common::Example for State {
                 .execute(move |cmd, res| {
                     cmd.bind_graphics_pipeline(res.pipeline(fill_pipe));
                     cmd.set_viewport_scissor(layer_extent);
-                    cmd.push_shader(&FillParams { color, layer: i });
+                    cmd.push_constants(&FillParams { color, layer: i });
                     cmd.draw(3, 1);
                 });
         }
@@ -128,7 +128,7 @@ impl common::Example for State {
             .execute(move |cmd, res| {
                 cmd.bind_graphics_pipeline(res.pipeline(composite_pipe));
                 cmd.set_viewport_scissor(frame.extent);
-                cmd.push_shader(&CompositeParams {
+                cmd.push_constants(&CompositeParams {
                     array_idx: res.array_index(array_image),
                     sampler_idx: res.sampler_index(sampler),
                 });

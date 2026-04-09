@@ -28,7 +28,7 @@
 /// }
 ///
 /// let cam = Camera { view: ..., proj: ..., position: [0.0, 1.0, 0.0] };
-/// cmd.push_shader(&cam);
+/// cmd.push_constants(&cam);
 /// ```
 pub trait ShaderType {
     const SCALAR_ALIGN: usize;

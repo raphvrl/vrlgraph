@@ -104,7 +104,7 @@ impl common::Example for State {
             .execute(move |cmd, res| {
                 cmd.bind_graphics_pipeline(res.pipeline(stereo_pipe));
                 cmd.set_viewport_scissor(stereo_extent);
-                cmd.push_shader(&StereoParams { time });
+                cmd.push_constants(&StereoParams { time });
                 cmd.draw(3, 1);
             });
 
@@ -115,7 +115,7 @@ impl common::Example for State {
             .execute(move |cmd, res| {
                 cmd.bind_graphics_pipeline(res.pipeline(compose_pipe));
                 cmd.set_viewport_scissor(frame.extent);
-                cmd.push_shader(&ComposeParams {
+                cmd.push_constants(&ComposeParams {
                     array_idx: res.array_index(stereo_image),
                     sampler_idx: res.sampler_index(sampler),
                 });

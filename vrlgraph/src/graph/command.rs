@@ -290,19 +290,11 @@ impl Cmd {
         };
     }
 
-    /// Writes a typed value as push constant data.
-    ///
-    /// `T` must implement [`bytemuck::Pod`]. A pipeline must be bound first.
-    /// The shared pipeline layout uses a single `ALL_STAGES` range.
-    pub fn push_constants<T: bytemuck::Pod>(&self, data: &T) {
-        self.push_constants_raw(bytemuck::bytes_of(data));
-    }
-
     /// Writes a [`ShaderType`](crate::ShaderType) value as push constant data
-    /// with automatic padding.
+    /// with automatic scalar-layout padding.
     ///
     /// A pipeline must be bound first.
-    pub fn push_shader<T: crate::ShaderType>(&self, data: &T) {
+    pub fn push_constants<T: crate::ShaderType>(&self, data: &T) {
         let mut buf = [0u8; 256];
         data.write_padded(&mut buf[..T::PADDED_SIZE]);
         self.push_constants_raw(&buf[..T::PADDED_SIZE]);

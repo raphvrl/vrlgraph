@@ -368,9 +368,12 @@ The typed methods handle usage flags and memory location automatically.
 // Storage buffer (CpuToGpu) — SHADER_DEVICE_ADDRESS included automatically
 let params = graph.storage_buffer("params", &data)?;
 
+// Storage buffer from a Pod slice (e.g. raw arrays)
+let colors = graph.storage_buffer_slice("colors", &color_data)?;
+
 // Uniform buffer (CpuToGpu) — update each frame with write_buffer
-let ubo = graph.uniform_buffer("scene_ubo", &[uniforms])?;
-graph.write_buffer(ubo, &[new_uniforms]);
+let ubo = graph.uniform_buffer("scene_ubo", &uniforms)?;
+graph.write_buffer(ubo, &new_uniforms);
 
 // Vertex / index buffers (GpuOnly) — data staged automatically via a one-shot transfer
 let verts   = graph.vertex_buffer("mesh_verts", &vertices)?;
@@ -379,7 +382,7 @@ let indices = graph.index_buffer("mesh_indices", &idx_data)?;
 // Vertex / index buffers (CpuToGpu) — no staging, directly writable for dynamic geometry
 let chunk_verts   = graph.vertex_buffer_dynamic("chunk_verts", &vertices)?;
 let chunk_indices = graph.index_buffer_dynamic("chunk_indices", &idx_data)?;
-graph.write_buffer(chunk_verts, &new_vertices);
+graph.write_buffer_slice(chunk_verts, &new_vertices);
 
 // Empty storage buffer (e.g. compute scratch space)
 let scratch = graph.storage_buffer_empty("scratch", 1 << 20)?;
@@ -414,7 +417,7 @@ Inside the frame loop, access the current slot through `FrameResources`:
 ```rust,ignore
 .execute(move |cmd, res| {
     let buf = res.streaming_buffer(per_frame_buf);
-    buf.write(std::slice::from_ref(&per_frame_data));
+    buf.write_slice(std::slice::from_ref(&per_frame_data));
     // bind buf.raw as a uniform buffer
 });
 ```
@@ -660,15 +663,13 @@ cmd.bind_index_buffer(res.buffer(index_buf), 0);
 
 Push constants are the sole mechanism to pass bindless indices, BDA pointers, and per-draw parameters to shaders. The shared pipeline layout exposes a single 256-byte range covering all stages.
 
-Pass any `Pod` value directly — no manual byte conversion needed:
+Pass any `ShaderType` value directly — scalar-layout padding is applied automatically:
 
 ```rust,ignore
-cmd.push_constants(&my_pod_value);
+cmd.push_constants(&my_value);
 ```
 
 For dynamic payloads assembled at runtime (e.g. a `Vec<u8>` slice), use `push_constants_raw(&[u8])`.
-
-For structs that need GPU-layout padding, use `push_shader` with a `ShaderType` value (see below).
 
 ### Shader types
 
@@ -684,7 +685,7 @@ struct Camera {
 }
 
 let cam = Camera { view, proj, position: [0.0, 1.0, 0.0] };
-cmd.push_shader(&cam);
+cmd.push_constants(&cam);
 
 // std430 (suitable for storage buffers)
 #[derive(ShaderType)]
@@ -698,9 +699,9 @@ struct Particle {
 Dedicated API methods handle serialization transparently:
 
 ```rust,ignore
-graph.uniform_shader("camera", &cam)?;       // allocate + write padded
-graph.write_shader(buf, &cam);               // update existing buffer
-cmd.push_shader(&cam);                       // push constants with padding
+graph.uniform_buffer("camera", &cam)?;       // allocate + write padded
+graph.write_buffer(buf, &cam);               // update existing buffer
+cmd.push_constants(&cam);                    // push constants with padding
 ```
 
 **Supported types:** `f32`, `u32`, `i32`, `u64`, `[f32; 2..4]`, `[u32; 2..4]`, `[i32; 2..4]`, `[[f32; 4]; 4]` (mat4), `[[f32; 4]; 3]` (mat3). With the `glam` feature: `Vec2`, `Vec3`, `Vec3A`, `Vec4`, `UVec2`–`UVec4`, `IVec2`–`IVec4`, `Mat3`, `Mat4`.

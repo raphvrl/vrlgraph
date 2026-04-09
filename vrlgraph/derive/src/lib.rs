@@ -140,7 +140,7 @@ fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
 ///
 /// The struct itself is **not modified** — no hidden padding fields are
 /// inserted. Instead, padding is applied at serialization time when calling
-/// methods like [`Cmd::push_shader`] or [`Graph::write_shader`].
+/// methods like [`Cmd::push_constants`] or [`Graph::write_buffer`].
 ///
 /// Uses **scalar layout** (`VK_EXT_scalar_block_layout`): each type is aligned
 /// to the size of its scalar component (4 for `f32`/`u32`/`i32`, 8 for `u64`).
@@ -175,7 +175,7 @@ fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
 /// }
 ///
 /// let cam = Camera { view, proj, position: [0.0, 1.0, 0.0] };
-/// cmd.push_shader(&cam);
+/// cmd.push_constants(&cam);
 /// ```
 #[proc_macro_derive(ShaderType, attributes(align))]
 pub fn derive_shader_type(input: TokenStream) -> TokenStream {

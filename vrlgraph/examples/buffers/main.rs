@@ -78,13 +78,13 @@ impl common::Example for State {
         let vertex_buf = graph.vertex_buffer("quad_verts", &VERTICES)?;
         let index_buf = graph.index_buffer("quad_indices", &INDICES)?;
 
-        let transform_buf = graph.uniform_shader(
+        let transform_buf = graph.uniform_buffer(
             "transform",
             &Transform {
                 matrix: Mat4::IDENTITY,
             },
         )?;
-        let colors_buf = graph.storage_buffer("colors", &COLORS)?;
+        let colors_buf = graph.storage_buffer_slice("colors", &COLORS)?;
 
         let vs = graph.shader_module("shaders/mesh.vert.spv", "main")?;
         let fs = graph.shader_module("shaders/mesh.frag.spv", "main")?;
@@ -119,7 +119,7 @@ impl common::Example for State {
         );
 
         self.graph
-            .write_shader(self.transform_buf, &Transform { matrix });
+            .write_buffer(self.transform_buf, &Transform { matrix });
 
         let frame = self.graph.begin_frame()?;
 
@@ -144,7 +144,7 @@ impl common::Example for State {
                 cmd.bind_vertex_buffer(res.buffer(vertex_buf), 0);
                 cmd.bind_index_buffer(res.buffer(index_buf), 0);
 
-                cmd.push_shader(&PC {
+                cmd.push_constants(&PC {
                     transform_addr,
                     colors_addr,
                 });

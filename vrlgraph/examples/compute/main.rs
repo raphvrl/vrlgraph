@@ -91,7 +91,7 @@ impl common::Example for State {
             .execute(move |cmd, res| {
                 cmd.bind_compute_pipeline(res.pipeline(compute_pipe));
 
-                cmd.push_shader(&FillParams {
+                cmd.push_constants(&FillParams {
                     width,
                     height,
                     storage_idx: res.storage_index(storage_image),
@@ -109,7 +109,7 @@ impl common::Example for State {
 
                 cmd.set_viewport_scissor(frame.extent);
 
-                cmd.push_shader(&BlitParams {
+                cmd.push_constants(&BlitParams {
                     sampled_idx: res.sampled_index(storage_image),
                     sampler_idx: res.sampler_index(sampler),
                 });

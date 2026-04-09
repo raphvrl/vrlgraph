@@ -168,8 +168,8 @@ impl EguiRenderer {
 
         self.ensure_buffer_capacity(graph, fi, vertex_byte_len, index_byte_len)?;
 
-        graph.write_buffer(self.vertex_bufs[fi], &self.vertices);
-        graph.write_buffer(self.index_bufs[fi], &self.indices);
+        graph.write_buffer_slice(self.vertex_bufs[fi], &self.vertices);
+        graph.write_buffer_slice(self.index_bufs[fi], &self.indices);
 
         let pipeline = self.pipeline;
         let sampler = self.sampler;
@@ -268,7 +268,7 @@ impl EguiRenderer {
                         },
                     });
 
-                    cmd.push_shader(&PushConstants {
+                    cmd.push_constants(&PushConstants {
                         screen_size,
                         texture_index: res.sampled_index(image),
                         sampler_index: sampler_idx,

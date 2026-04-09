@@ -265,20 +265,21 @@ impl Graph {
         Ok(Buffer(dst))
     }
 
-    pub fn write_buffer<T: bytemuck::Pod>(&self, handle: Buffer, data: &[T]) {
+    /// Writes a [`ShaderType`](crate::ShaderType) value into a buffer
+    /// with automatic scalar-layout padding.
+    pub fn write_buffer<T: crate::ShaderType>(&self, handle: Buffer, value: &T) {
         self.resources
             .get_buffer(handle.0)
             .expect("write_buffer: invalid buffer handle")
-            .write(data);
+            .write(value);
     }
 
-    /// Writes a single [`ShaderType`](crate::ShaderType) value into a buffer
-    /// with automatic GPU-layout padding.
-    pub fn write_shader<T: crate::ShaderType>(&self, handle: Buffer, value: &T) {
+    /// Writes a slice of [`Pod`](bytemuck::Pod) values into a buffer.
+    pub fn write_buffer_slice<T: bytemuck::Pod>(&self, handle: Buffer, data: &[T]) {
         self.resources
             .get_buffer(handle.0)
-            .expect("write_shader: invalid buffer handle")
-            .write_shader(value);
+            .expect("write_buffer_slice: invalid buffer handle")
+            .write_slice(data);
     }
 
     // ── Convenience buffer methods ───────────────────────────────────
@@ -297,48 +298,51 @@ impl Graph {
         })?)
     }
 
-    fn host_buffer_with_shader<T: crate::ShaderType>(
+    fn host_buffer_with_data<T: crate::ShaderType>(
         &mut self,
         label: &str,
         value: &T,
         usage: vk::BufferUsageFlags,
     ) -> Result<Buffer, GraphError> {
         let buf = self.host_buffer(label, T::PADDED_SIZE as vk::DeviceSize, usage)?;
-        self.write_shader(buf, value);
+        self.write_buffer(buf, value);
         Ok(buf)
     }
 
-    fn host_buffer_with_data<T: bytemuck::Pod>(
+    fn host_buffer_with_slice<T: bytemuck::Pod>(
         &mut self,
         label: &str,
         data: &[T],
         usage: vk::BufferUsageFlags,
     ) -> Result<Buffer, GraphError> {
         let buf = self.host_buffer(label, std::mem::size_of_val(data) as vk::DeviceSize, usage)?;
-        self.write_buffer(buf, data);
+        self.write_buffer_slice(buf, data);
         Ok(buf)
-    }
-
-    /// Allocates a `STORAGE_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
-    ///
-    /// Includes `SHADER_DEVICE_ADDRESS` automatically. Retrieve the GPU pointer
-    /// with [`Graph::buffer_device_address`] to pass it to shaders via push constants.
-    pub fn storage_buffer<T: bytemuck::Pod>(
-        &mut self,
-        label: &str,
-        data: &[T],
-    ) -> Result<Buffer, GraphError> {
-        self.host_buffer_with_data(label, data, vk::BufferUsageFlags::STORAGE_BUFFER)
     }
 
     /// Allocates a `STORAGE_BUFFER` pre-filled with a [`ShaderType`](crate::ShaderType)
     /// value (with automatic padding) in `CpuToGpu` memory.
-    pub fn storage_shader<T: crate::ShaderType>(
+    ///
+    /// Includes `SHADER_DEVICE_ADDRESS` automatically. Retrieve the GPU pointer
+    /// with [`Graph::buffer_device_address`] to pass it to shaders via push constants.
+    pub fn storage_buffer<T: crate::ShaderType>(
         &mut self,
         label: &str,
         value: &T,
     ) -> Result<Buffer, GraphError> {
-        self.host_buffer_with_shader(label, value, vk::BufferUsageFlags::STORAGE_BUFFER)
+        self.host_buffer_with_data(label, value, vk::BufferUsageFlags::STORAGE_BUFFER)
+    }
+
+    /// Allocates a `STORAGE_BUFFER` pre-filled with a slice of [`Pod`](bytemuck::Pod)
+    /// values in `CpuToGpu` memory.
+    ///
+    /// Includes `SHADER_DEVICE_ADDRESS` automatically.
+    pub fn storage_buffer_slice<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+    ) -> Result<Buffer, GraphError> {
+        self.host_buffer_with_slice(label, data, vk::BufferUsageFlags::STORAGE_BUFFER)
     }
 
     /// Allocates an uninitialised `STORAGE_BUFFER` of `size` bytes in `CpuToGpu` memory.
@@ -352,28 +356,29 @@ impl Graph {
         self.host_buffer(label, size, vk::BufferUsageFlags::STORAGE_BUFFER)
     }
 
-    /// Allocates a `UNIFORM_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
-    ///
-    /// Includes `SHADER_DEVICE_ADDRESS` automatically. Update it each frame with
-    /// [`Graph::write_buffer`].
-    pub fn uniform_buffer<T: bytemuck::Pod>(
-        &mut self,
-        label: &str,
-        data: &[T],
-    ) -> Result<Buffer, GraphError> {
-        self.host_buffer_with_data(label, data, vk::BufferUsageFlags::UNIFORM_BUFFER)
-    }
-
     /// Allocates a `UNIFORM_BUFFER` pre-filled with a [`ShaderType`](crate::ShaderType)
     /// value (with automatic padding) in `CpuToGpu` memory.
     ///
-    /// Update it each frame with [`Graph::write_shader`].
-    pub fn uniform_shader<T: crate::ShaderType>(
+    /// Includes `SHADER_DEVICE_ADDRESS` automatically. Update it each frame with
+    /// [`Graph::write_buffer`].
+    pub fn uniform_buffer<T: crate::ShaderType>(
         &mut self,
         label: &str,
         value: &T,
     ) -> Result<Buffer, GraphError> {
-        self.host_buffer_with_shader(label, value, vk::BufferUsageFlags::UNIFORM_BUFFER)
+        self.host_buffer_with_data(label, value, vk::BufferUsageFlags::UNIFORM_BUFFER)
+    }
+
+    /// Allocates a `UNIFORM_BUFFER` pre-filled with a slice of [`Pod`](bytemuck::Pod)
+    /// values in `CpuToGpu` memory.
+    ///
+    /// Update it each frame with [`Graph::write_buffer_slice`].
+    pub fn uniform_buffer_slice<T: bytemuck::Pod>(
+        &mut self,
+        label: &str,
+        data: &[T],
+    ) -> Result<Buffer, GraphError> {
+        self.host_buffer_with_slice(label, data, vk::BufferUsageFlags::UNIFORM_BUFFER)
     }
 
     /// Allocates an uninitialised `UNIFORM_BUFFER` of `size` bytes in `CpuToGpu` memory.
@@ -439,26 +444,26 @@ impl Graph {
     /// Allocates a `VERTEX_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
     ///
     /// Unlike [`vertex_buffer`](Graph::vertex_buffer), no staging is used — the buffer
-    /// is directly writable from the CPU via [`Graph::write_buffer`]. Intended for
+    /// is directly writable from the CPU via [`Graph::write_buffer_slice`]. Intended for
     /// geometry that changes frequently (e.g. dynamic chunks).
     pub fn vertex_buffer_dynamic<T: bytemuck::Pod>(
         &mut self,
         label: &str,
         data: &[T],
     ) -> Result<Buffer, GraphError> {
-        self.host_buffer_with_data(label, data, vk::BufferUsageFlags::VERTEX_BUFFER)
+        self.host_buffer_with_slice(label, data, vk::BufferUsageFlags::VERTEX_BUFFER)
     }
 
     /// Allocates an `INDEX_BUFFER` pre-filled with `data` in `CpuToGpu` memory.
     ///
     /// Like [`vertex_buffer_dynamic`](Graph::vertex_buffer_dynamic), directly writable
-    /// from the CPU via [`Graph::write_buffer`]. `T` is typically `u16` or `u32`.
+    /// from the CPU via [`Graph::write_buffer_slice`]. `T` is typically `u16` or `u32`.
     pub fn index_buffer_dynamic(
         &mut self,
         label: &str,
         data: &[u32],
     ) -> Result<Buffer, GraphError> {
-        self.host_buffer_with_data(label, data, vk::BufferUsageFlags::INDEX_BUFFER)
+        self.host_buffer_with_slice(label, data, vk::BufferUsageFlags::INDEX_BUFFER)
     }
 
     pub fn create_sampler(&mut self) -> super::sampler::SamplerBuilder<'_> {
