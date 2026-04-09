@@ -3,11 +3,11 @@ use std::path::Path;
 
 use ash::vk;
 
+#[cfg(debug_assertions)]
+use super::reload::{PipelineDesc, PipelineKind};
 use super::{ComputePipelineBuilder, PipelineBuilder, load_spv, resolve_shader_path};
 #[cfg(debug_assertions)]
 use super::{create_compute_pipeline_raw, create_graphics_pipeline_raw};
-#[cfg(debug_assertions)]
-use super::reload::{PipelineDesc, PipelineKind};
 use crate::graph::{Graph, GraphError};
 #[cfg(debug_assertions)]
 use crate::resource::ShaderModuleHandle;
@@ -49,11 +49,10 @@ impl Graph {
         {
             self.shader_watcher.watch(&resolved);
             self.shader_module_paths.insert(handle, resolved);
-            if let Some(spv) = &spv {
-                if let Some(pc) = super::validate::reflect_push_constants(spv) {
+            if let Some(spv) = &spv
+                && let Some(pc) = super::validate::reflect_push_constants(spv) {
                     self.shader_push_constants.insert(handle, pc);
                 }
-            }
         }
 
         Ok(ShaderModule(handle))

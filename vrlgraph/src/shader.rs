@@ -154,12 +154,7 @@ mod glam_impls {
         const PADDED_SIZE: usize = 16;
 
         fn write_padded(&self, dst: &mut [u8]) {
-            let arr: [u32; 4] = [
-                self.x as u32,
-                self.y as u32,
-                self.z as u32,
-                self.w as u32,
-            ];
+            let arr: [u32; 4] = [self.x as u32, self.y as u32, self.z as u32, self.w as u32];
             dst[..16].copy_from_slice(bytemuck::cast_slice(&arr));
         }
     }

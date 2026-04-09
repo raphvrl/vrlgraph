@@ -223,9 +223,8 @@ mod tests {
         let producer = make_buffer_pass("producer", &[buf], &[]);
         let mut consumer = make_buffer_pass("consumer", &[], &[buf]);
         consumer.writes = vec![img_access(0)];
-        let result =
-            sort_and_cull_passes(vec![consumer, producer], &FxHashSet::from_iter([0]))
-                .expect("no cycle");
+        let result = sort_and_cull_passes(vec![consumer, producer], &FxHashSet::from_iter([0]))
+            .expect("no cycle");
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].name, "producer");
         assert_eq!(result[1].name, "consumer");
@@ -237,8 +236,7 @@ mod tests {
         let b = make_pass("b", &[0], &[]);
         let c = make_pass("c", &[0], &[]);
         let result =
-            sort_and_cull_passes(vec![a, b, c], &FxHashSet::from_iter([0]))
-                .expect("no cycle");
+            sort_and_cull_passes(vec![a, b, c], &FxHashSet::from_iter([0])).expect("no cycle");
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].name, "a");
         assert_eq!(result[1].name, "b");

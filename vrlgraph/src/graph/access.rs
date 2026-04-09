@@ -252,7 +252,10 @@ mod tests {
         let info = Access::DepthStencilAttachment.info();
         assert_eq!(info.layout, L::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
         assert_eq!(info.stage, S::EARLY_FRAGMENT_TESTS | S::LATE_FRAGMENT_TESTS);
-        assert_eq!(info.access, A::DEPTH_STENCIL_ATTACHMENT_WRITE | A::DEPTH_STENCIL_ATTACHMENT_READ);
+        assert_eq!(
+            info.access,
+            A::DEPTH_STENCIL_ATTACHMENT_WRITE | A::DEPTH_STENCIL_ATTACHMENT_READ
+        );
         assert_eq!(info.usage, U::DEPTH_STENCIL_ATTACHMENT);
 
         let info = Access::DepthRead.info();
@@ -301,7 +304,10 @@ mod tests {
         assert_eq!(info.access, A::UNIFORM_READ);
 
         let info = BufferUsage::StorageRead.info();
-        assert_eq!(info.stage, S::VERTEX_SHADER | S::FRAGMENT_SHADER | S::COMPUTE_SHADER);
+        assert_eq!(
+            info.stage,
+            S::VERTEX_SHADER | S::FRAGMENT_SHADER | S::COMPUTE_SHADER
+        );
         assert_eq!(info.access, A::SHADER_READ);
 
         let info = BufferUsage::StorageWrite.info();

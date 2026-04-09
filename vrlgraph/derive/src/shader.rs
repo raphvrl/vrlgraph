@@ -63,10 +63,10 @@ pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
         align_exprs.push(align_expr);
     }
 
-    let max_align_expr = align_exprs.iter().rev().fold(
-        quote! { 1usize },
-        |acc, a| quote! { const_max(#a, #acc) },
-    );
+    let max_align_expr = align_exprs
+        .iter()
+        .rev()
+        .fold(quote! { 1usize }, |acc, a| quote! { const_max(#a, #acc) });
 
     let last_end = if named_fields.is_empty() {
         quote! { 0usize }

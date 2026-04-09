@@ -242,7 +242,10 @@ mod tests {
         ImageEntry::external(
             vk::Image::null(),
             vk::ImageView::null(),
-            vk::Extent2D { width: 1, height: 1 },
+            vk::Extent2D {
+                width: 1,
+                height: 1,
+            },
         )
     }
 

@@ -18,8 +18,8 @@ pub(crate) fn reflect_push_constants(spv: &[u32]) -> Option<ReflectedPushConstan
 
     for entry in &entry_points {
         for var in &entry.vars {
-            if let Variable::PushConstant { ty, .. } = var {
-                if let Type::Struct(struct_ty) = ty {
+            if let Variable::PushConstant { ty, .. } = var
+                && let Type::Struct(struct_ty) = ty {
                     let members: Vec<ReflectedMember> = struct_ty
                         .members
                         .iter()
@@ -30,18 +30,13 @@ pub(crate) fn reflect_push_constants(spv: &[u32]) -> Option<ReflectedPushConstan
                         })
                         .collect();
 
-                    let total_size = members
-                        .iter()
-                        .map(|m| m.offset + m.size)
-                        .max()
-                        .unwrap_or(0);
+                    let total_size = members.iter().map(|m| m.offset + m.size).max().unwrap_or(0);
 
                     return Some(ReflectedPushConstants {
                         total_size,
                         members,
                     });
                 }
-            }
         }
     }
 

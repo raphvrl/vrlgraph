@@ -13,11 +13,7 @@ pub struct HostBufferBuilder<'g> {
 }
 
 impl<'g> HostBufferBuilder<'g> {
-    pub(super) fn new(
-        graph: &'g mut Graph,
-        label: String,
-        usage: vk::BufferUsageFlags,
-    ) -> Self {
+    pub(super) fn new(graph: &'g mut Graph, label: String, usage: vk::BufferUsageFlags) -> Self {
         Self {
             graph,
             label,
@@ -80,11 +76,7 @@ pub struct GpuBufferBuilder<'g> {
 }
 
 impl<'g> GpuBufferBuilder<'g> {
-    pub(super) fn new(
-        graph: &'g mut Graph,
-        label: String,
-        usage: vk::BufferUsageFlags,
-    ) -> Self {
+    pub(super) fn new(graph: &'g mut Graph, label: String, usage: vk::BufferUsageFlags) -> Self {
         Self {
             graph,
             label,

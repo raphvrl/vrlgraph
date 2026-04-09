@@ -252,7 +252,10 @@ mod tests {
 
     #[test]
     fn image_kind_vk_view_type() {
-        assert_eq!(ImageKind::Image2D.vk_view_type(), vk::ImageViewType::TYPE_2D);
+        assert_eq!(
+            ImageKind::Image2D.vk_view_type(),
+            vk::ImageViewType::TYPE_2D
+        );
         assert_eq!(
             ImageKind::Image2DArray { layers: 2 }.vk_view_type(),
             vk::ImageViewType::TYPE_2D_ARRAY
@@ -266,7 +269,10 @@ mod tests {
 
     #[test]
     fn image_kind_create_flags() {
-        assert_eq!(ImageKind::Image2D.create_flags(), vk::ImageCreateFlags::empty());
+        assert_eq!(
+            ImageKind::Image2D.create_flags(),
+            vk::ImageCreateFlags::empty()
+        );
         assert_eq!(
             ImageKind::Image2DArray { layers: 2 }.create_flags(),
             vk::ImageCreateFlags::empty()

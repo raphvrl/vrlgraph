@@ -282,11 +282,7 @@ struct U16Alignment {
 fn test_u16_alignment_in_struct() {
     assert_eq!(U16Alignment::PADDED_SIZE, 8);
 
-    let v = U16Alignment {
-        a: 1,
-        b: 2,
-        c: 3.0,
-    };
+    let v = U16Alignment { a: 1, b: 2, c: 3.0 };
     let mut buf = [0u8; 8];
     v.write_padded(&mut buf);
 

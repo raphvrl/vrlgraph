@@ -105,7 +105,10 @@ fn compile_example_shaders(manifest_dir: &Path, glslc: &Path) {
                 "vert" => "vertex",
                 "frag" => "fragment",
                 "comp" => "compute",
-                other => panic!("unknown shader stage '.{other}' in {}", shader_path.display()),
+                other => panic!(
+                    "unknown shader stage '.{other}' in {}",
+                    shader_path.display()
+                ),
             };
             let status = Command::new(glslc)
                 .arg("--target-env=vulkan1.2")
@@ -115,7 +118,11 @@ fn compile_example_shaders(manifest_dir: &Path, glslc: &Path) {
                 .arg(&spv_out)
                 .status()
                 .expect("failed to run glslc");
-            assert!(status.success(), "glslc failed for {}", shader_path.display());
+            assert!(
+                status.success(),
+                "glslc failed for {}",
+                shader_path.display()
+            );
         }
     }
 }

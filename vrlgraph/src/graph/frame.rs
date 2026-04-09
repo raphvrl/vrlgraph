@@ -129,7 +129,9 @@ impl Graph {
 
         let idx = self.current;
         self.sync.wait(idx)?;
-        self.frames[idx].deferred_frees.drain_into(&mut self.bindless);
+        self.frames[idx]
+            .deferred_frees
+            .drain_into(&mut self.bindless);
         self.cleanup_frame();
 
         self.timestamps.last_timings.clear();
@@ -273,8 +275,11 @@ impl Graph {
             register_bindless(entry, &mut self.bindless, view);
         }
 
-        let mut img_states: Vec<BarrierState> =
-            self.images.iter().map(|e| BarrierState::from_entry(e)).collect();
+        let mut img_states: Vec<BarrierState> = self
+            .images
+            .iter()
+            .map(BarrierState::from_entry)
+            .collect();
 
         let raw = self.frames[self.frame_index].pool.reset_and_begin()?;
         let mut cmd = Cmd::new(
@@ -311,7 +316,10 @@ impl Graph {
                 .filter(|w| w.is_color)
                 .map(|w| {
                     let layer_idx = w.layer.unwrap_or(0) as usize;
-                    resolve_load_op(w.load_op, img_states[w.image.0 as usize].layers[layer_idx].layout)
+                    resolve_load_op(
+                        w.load_op,
+                        img_states[w.image.0 as usize].layers[layer_idx].layout,
+                    )
                 })
                 .collect();
             let depth_write: Option<(&PassAccess, vk::AttachmentLoadOp)> =
@@ -319,7 +327,10 @@ impl Graph {
                     let layer_idx = w.layer.unwrap_or(0) as usize;
                     (
                         w,
-                        resolve_load_op(w.load_op, img_states[w.image.0 as usize].layers[layer_idx].layout),
+                        resolve_load_op(
+                            w.load_op,
+                            img_states[w.image.0 as usize].layers[layer_idx].layout,
+                        ),
                     )
                 });
 

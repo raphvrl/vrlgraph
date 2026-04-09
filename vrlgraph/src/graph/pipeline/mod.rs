@@ -345,11 +345,7 @@ impl<'g> ComputePipelineBuilder<'g> {
 
         #[cfg(debug_assertions)]
         {
-            gpu_pipeline.reflected_pc = self
-                .graph
-                .shader_push_constants
-                .get(&shader.0)
-                .cloned();
+            gpu_pipeline.reflected_pc = self.graph.shader_push_constants.get(&shader.0).cloned();
         }
 
         if let Some(du) = self.graph.device().debug_utils() {
@@ -381,11 +377,10 @@ pub(super) fn resolve_shader_path(path: &Path) -> PathBuf {
     let exe_relative = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join(path)));
-    if let Some(p) = &exe_relative {
-        if p.exists() {
+    if let Some(p) = &exe_relative
+        && p.exists() {
             return p.clone();
         }
-    }
     std::env::current_dir()
         .ok()
         .map(|dir| dir.join(path))

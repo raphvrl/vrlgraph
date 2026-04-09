@@ -233,7 +233,11 @@ mod tests {
         access: vk::AccessFlags2,
     ) -> BarrierState {
         BarrierState {
-            layers: smallvec::smallvec![LayerState { layout, stage, access }],
+            layers: smallvec::smallvec![LayerState {
+                layout,
+                stage,
+                access
+            }],
         }
     }
 
@@ -354,7 +358,13 @@ mod tests {
         let depth_access = vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE;
 
         for layer in 0..4u32 {
-            let writes = vec![img_access_layer(0, depth_layout, depth_stage, depth_access, layer)];
+            let writes = vec![img_access_layer(
+                0,
+                depth_layout,
+                depth_stage,
+                depth_access,
+                layer,
+            )];
             let result = compute_barriers(&[], &writes, &mut states).expect("barrier expected");
             assert_eq!(result.len(), 1);
             assert_eq!(result[0].old_layout, vk::ImageLayout::UNDEFINED);
@@ -377,7 +387,13 @@ mod tests {
         let depth_access = vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE;
 
         for layer in 0..4u32 {
-            let writes = vec![img_access_layer(0, depth_layout, depth_stage, depth_access, layer)];
+            let writes = vec![img_access_layer(
+                0,
+                depth_layout,
+                depth_stage,
+                depth_access,
+                layer,
+            )];
             compute_barriers(&[], &writes, &mut states);
         }
 
@@ -409,7 +425,13 @@ mod tests {
         let depth_access = vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE;
 
         for layer in 0..2u32 {
-            let writes = vec![img_access_layer(0, depth_layout, depth_stage, depth_access, layer)];
+            let writes = vec![img_access_layer(
+                0,
+                depth_layout,
+                depth_stage,
+                depth_access,
+                layer,
+            )];
             compute_barriers(&[], &writes, &mut states);
         }
 

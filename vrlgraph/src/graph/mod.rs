@@ -37,9 +37,9 @@ use barrier::BufferBarrierState;
 use bindless::BindlessDescriptorTable;
 use command::{CommandError, CommandPool};
 use pass::RecordedPass;
-use query::TimestampState;
 #[cfg(debug_assertions)]
 use pipeline::reload::{PipelineDesc, ShaderWatcher};
+use query::TimestampState;
 use resources::update_bindless;
 use sync::{FrameSync, SyncError};
 use transient::TransientCache;

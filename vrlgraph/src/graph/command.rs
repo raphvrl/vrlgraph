@@ -4,12 +4,12 @@ use ash::vk;
 use smallvec::SmallVec;
 use thiserror::Error;
 
+#[cfg(debug_assertions)]
+use super::pipeline::validate::ReflectedPushConstants;
 use crate::resource::{GpuBuffer, GpuPipeline};
 use crate::types::{ColorWriteMask, CompareOp, CullMode, FrontFace, PolygonMode, Topology};
 #[cfg(debug_assertions)]
 use std::cell::Cell;
-#[cfg(debug_assertions)]
-use super::pipeline::validate::ReflectedPushConstants;
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -318,9 +318,9 @@ impl Cmd {
     /// A pipeline must be bound first.
     pub fn push_constants<T: crate::ShaderType>(&self, data: &T) {
         #[cfg(debug_assertions)]
-        if !self.pc_mismatch_warned.get() {
-            if let Some(reflected) = &self.reflected_pc {
-                if T::PADDED_SIZE != reflected.total_size {
+        if !self.pc_mismatch_warned.get()
+            && let Some(reflected) = &self.reflected_pc
+                && T::PADDED_SIZE != reflected.total_size {
                     self.pc_mismatch_warned.set(true);
                     super::pipeline::validate::validate_push_constants(
                         reflected,
@@ -328,8 +328,6 @@ impl Cmd {
                         std::any::type_name::<T>(),
                     );
                 }
-            }
-        }
         let mut buf = [0u8; 256];
         data.write_padded(&mut buf[..T::PADDED_SIZE]);
         self.push_constants_raw(&buf[..T::PADDED_SIZE]);

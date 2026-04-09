@@ -6,8 +6,7 @@ use super::command::{Cmd, CommandPool};
 use super::image::{Image, ImageBuilder, ImageEntry, ImageOrigin, TextureBuilder};
 use super::{Graph, GraphError};
 use crate::resource::{
-    Buffer, BufferDesc, GpuBuffer, ImageHandle, ImageKind, ResourceError,
-    StreamingBufferHandle,
+    Buffer, BufferDesc, GpuBuffer, ImageHandle, ImageKind, ResourceError, StreamingBufferHandle,
 };
 
 /// Routes a newly created image view into the correct bindless binding(s) based on
@@ -551,4 +550,3 @@ impl Graph {
         Ok(())
     }
 }
-

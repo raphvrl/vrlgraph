@@ -148,9 +148,7 @@ struct App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop
-            .create_window(
-                Window::default_attributes().with_title("vrlgraph-egui: render to egui"),
-            )
+            .create_window(Window::default_attributes().with_title("vrlgraph-egui: render to egui"))
             .unwrap();
 
         match State::new(window) {
