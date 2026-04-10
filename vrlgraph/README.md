@@ -381,13 +381,16 @@ let params = graph.storage_buffer("params").data(&data).build()?;
 let ubo = graph.uniform_buffer("scene_ubo").data(&uniforms).build()?;
 graph.write_buffer(ubo, &new_uniforms);
 
-// Vertex / index buffers (GpuOnly) — data staged automatically via a one-shot transfer
+// Vertex / index buffers (GpuOnly) — data uploaded via the transfer queue
 let verts   = graph.vertex_buffer("mesh_verts").data(&vertices).build()?;
 let indices = graph.index_buffer("mesh_indices").data(&idx_data).build()?;
 
+// Async vertex buffer — uploaded in the background, does not block
+let chunk_verts = graph.vertex_buffer("chunk").data(&vertices).build_async()?;
+
 // Vertex / index buffers (CpuToGpu) — no staging, directly writable for dynamic geometry
-let chunk_verts = graph.vertex_buffer("chunk_verts").data(&vertices).dynamic().build()?;
-graph.write_buffer_slice(chunk_verts, &new_vertices);
+let dyn_verts = graph.vertex_buffer("dyn_verts").data(&vertices).dynamic().build()?;
+graph.write_buffer_slice(dyn_verts, &new_vertices);
 
 // Empty storage buffer (e.g. compute scratch space)
 let scratch = graph.storage_buffer("scratch").size(1 << 20).build()?;
@@ -412,9 +415,10 @@ let stream = graph.storage_buffer("per_frame").size(256).streaming()?;
 | Method | Required | Default | Description |
 |---|---|---|---|
 | `.size(vk::DeviceSize)` | yes* | — | Buffer size in bytes |
-| `.data<T: Pod>(&[T])` | yes* | — | Initial contents (staged to GPU) |
+| `.data<T: Pod>(&[T])` | yes* | — | Initial contents (uploaded via transfer queue) |
 | `.dynamic()` | no | `false` | Use CpuToGpu memory instead of GpuOnly (no staging, directly writable) |
-| `.build()` | — | — | Create the buffer |
+| `.build()` | — | — | Create the buffer (blocks until upload completes), returns `Buffer` |
+| `.build_async()` | — | — | Create the buffer without blocking, returns `AsyncBuffer` |
 
 \* Exactly one of `.size()` or `.data()` is required.
 
@@ -451,6 +455,37 @@ Inside the frame loop, access the current slot through `FrameResources`:
     // bind buf.raw as a uniform buffer
 });
 ```
+
+### Async buffers
+
+`build_async()` uploads buffer data via the transfer queue without blocking the calling thread. It returns an `AsyncBuffer` instead of a `Buffer` — the two are distinct types, enforced at compile time.
+
+A dedicated transfer queue (DMA engine) is used when the GPU exposes one (common on AMD); otherwise the graphics queue is used transparently. The graph discovers the transfer queue automatically at initialization.
+
+```rust,ignore
+// Upload a chunk mesh in the background
+let chunk_vb = graph.vertex_buffer("chunk_42").data(&vertices).build_async()?;
+let chunk_ib = graph.index_buffer("chunk_42_idx").data(&indices).build_async()?;
+```
+
+Inside a pass, use `try_buffer()` to access an `AsyncBuffer`. It returns `None` while the transfer is still in progress:
+
+```rust,ignore
+graph.render_pass("draw_chunks")
+    .read((chunk_vb, BufferUsage::VertexRead))
+    .read((chunk_ib, BufferUsage::IndexRead))
+    .execute(move |cmd, res| {
+        let Some(vb) = res.try_buffer(chunk_vb) else { return };
+        let Some(ib) = res.try_buffer(chunk_ib) else { return };
+        cmd.bind_vertex_buffer(vb, 0);
+        cmd.bind_index_buffer(ib, 0);
+        cmd.draw_indexed(index_count, 1, 0, 0, 0);
+    });
+```
+
+`Buffer` and `AsyncBuffer` cannot be mixed: `res.buffer()` only accepts `Buffer`, and `res.try_buffer()` only accepts `AsyncBuffer`. This prevents accidentally reading an in-flight buffer.
+
+To destroy an async buffer, use `destroy_async_buffer()` which waits for any pending transfer to complete before freeing the resource.
 
 ---
 
