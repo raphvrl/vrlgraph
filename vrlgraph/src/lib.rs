@@ -23,7 +23,7 @@ pub mod prelude {
         WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
     };
 
-    pub use crate::resource::{Buffer, BufferDesc, ImageKind, Pipeline, ShaderModule};
+    pub use crate::resource::{AsyncBuffer, Buffer, BufferDesc, ImageKind, Pipeline, ShaderModule};
 
     pub use crate::types::*;
 

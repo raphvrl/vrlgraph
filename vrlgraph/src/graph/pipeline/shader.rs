@@ -50,9 +50,10 @@ impl Graph {
             self.shader_watcher.watch(&resolved);
             self.shader_module_paths.insert(handle, resolved);
             if let Some(spv) = &spv
-                && let Some(pc) = super::validate::reflect_push_constants(spv) {
-                    self.shader_push_constants.insert(handle, pc);
-                }
+                && let Some(pc) = super::validate::reflect_push_constants(spv)
+            {
+                self.shader_push_constants.insert(handle, pc);
+            }
         }
 
         Ok(ShaderModule(handle))

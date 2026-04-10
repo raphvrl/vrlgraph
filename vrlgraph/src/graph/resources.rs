@@ -4,9 +4,11 @@ use gpu_allocator::MemoryLocation;
 use super::bindless::{BindlessDescriptorTable, Sampler};
 use super::command::{Cmd, CommandPool};
 use super::image::{Image, ImageBuilder, ImageEntry, ImageOrigin, TextureBuilder};
+use super::transfer::TransferId;
 use super::{Graph, GraphError};
 use crate::resource::{
-    Buffer, BufferDesc, GpuBuffer, ImageHandle, ImageKind, ResourceError, StreamingBufferHandle,
+    AsyncBuffer, Buffer, BufferDesc, GpuBuffer, ImageHandle, ImageKind, ResourceError,
+    StreamingBufferHandle,
 };
 
 /// Routes a newly created image view into the correct bindless binding(s) based on
@@ -121,6 +123,14 @@ impl Graph {
         self.buffer_states.remove(&handle.0);
     }
 
+    pub fn destroy_async_buffer(&mut self, handle: AsyncBuffer) {
+        self.transfer.wait_for_buffer(handle.0);
+        let device = self.device.ash_device().clone();
+        self.resources
+            .destroy_buffer(&device, self.device.allocator_mut(), handle.0);
+        self.buffer_states.remove(&handle.0);
+    }
+
     pub fn get_buffer(&self, handle: Buffer) -> Option<&GpuBuffer> {
         self.resources.get_buffer(handle.0)
     }
@@ -217,44 +227,6 @@ impl Graph {
             .destroy_buffer(&device, self.device.allocator_mut(), handle);
     }
 
-    pub(super) fn upload_buffer_labeled(
-        &mut self,
-        bytes: &[u8],
-        usage: vk::BufferUsageFlags,
-        label: &str,
-    ) -> Result<Buffer, GraphError> {
-        let size = bytes.len() as vk::DeviceSize;
-        let device = self.device.ash_device().clone();
-
-        let staging = self.create_staging(bytes, &format!("{label}_staging"))?;
-
-        let dst = self.resources.create_buffer(
-            &device,
-            self.device.allocator_mut(),
-            &BufferDesc {
-                size,
-                usage: usage | vk::BufferUsageFlags::TRANSFER_DST,
-                location: MemoryLocation::GpuOnly,
-                label: label.to_string(),
-            },
-        )?;
-
-        let src_raw = self
-            .resources
-            .get_buffer(staging)
-            .expect("buffer just created")
-            .raw;
-        let dst_raw = self
-            .resources
-            .get_buffer(dst)
-            .expect("buffer just created")
-            .raw;
-        self.one_shot_submit(|cmd| cmd.copy_buffer_to_buffer(src_raw, dst_raw, size))?;
-        self.destroy_staging(staging);
-
-        Ok(Buffer(dst))
-    }
-
     /// Writes a [`ShaderType`](crate::ShaderType) value into a buffer
     /// with automatic scalar-layout padding.
     pub fn write_buffer<T: crate::ShaderType>(&self, handle: Buffer, value: &T) {
@@ -295,74 +267,6 @@ impl Graph {
     pub fn destroy_sampler(&mut self, sampler: Sampler) {
         self.resources
             .destroy_sampler(self.device.ash_device(), sampler.handle);
-    }
-
-    pub(in crate::graph) fn upload_image_data(
-        &mut self,
-        dst: ImageHandle,
-        pixels: &[u8],
-        extent: vk::Extent3D,
-        mip_levels: u32,
-    ) -> Result<(), GraphError> {
-        let staging = self.create_staging(pixels, "staging_upload")?;
-
-        let vk_img = self
-            .resources
-            .get_image(dst)
-            .expect("image just created")
-            .raw;
-        let stg_buf = self
-            .resources
-            .get_buffer(staging)
-            .expect("buffer just created")
-            .raw;
-
-        self.one_shot_submit(|cmd| {
-            cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
-                .src_stage_mask(vk::PipelineStageFlags2::NONE)
-                .src_access_mask(vk::AccessFlags2::NONE)
-                .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
-                .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
-                .old_layout(vk::ImageLayout::UNDEFINED)
-                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(vk_img)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: vk::REMAINING_MIP_LEVELS,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })]);
-
-            cmd.copy_buffer_to_image(stg_buf, vk_img, extent, 0);
-
-            if mip_levels > 1 {
-                cmd.generate_mipmaps(vk_img, extent, mip_levels);
-            } else {
-                cmd.pipeline_barrier2(&[vk::ImageMemoryBarrier2::default()
-                    .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
-                    .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
-                    .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
-                    .dst_access_mask(vk::AccessFlags2::SHADER_READ)
-                    .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .image(vk_img)
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    })]);
-            }
-        })?;
-
-        self.destroy_staging(staging);
-        Ok(())
     }
 
     pub(in crate::graph) fn upload_image_data_with_mips(
@@ -548,5 +452,119 @@ impl Graph {
         entry.access = vk::AccessFlags2::SHADER_READ;
 
         Ok(())
+    }
+
+    // ── Async transfer methods ──────────────────────────────────────
+
+    /// Uploads data to a GPU-only buffer asynchronously via the transfer queue.
+    /// The buffer is not usable until the returned [`TransferId`] completes.
+    pub fn upload_buffer_async(
+        &mut self,
+        bytes: &[u8],
+        usage: vk::BufferUsageFlags,
+        label: &str,
+    ) -> Result<(Buffer, TransferId), GraphError> {
+        let size = bytes.len() as vk::DeviceSize;
+        let device = self.device.ash_device().clone();
+
+        let staging = self.create_staging(bytes, &format!("{label}_staging"))?;
+
+        let dst = self.resources.create_buffer(
+            &device,
+            self.device.allocator_mut(),
+            &BufferDesc {
+                size,
+                usage: usage | vk::BufferUsageFlags::TRANSFER_DST,
+                location: MemoryLocation::GpuOnly,
+                label: label.to_string(),
+            },
+        )?;
+
+        let src_raw = self
+            .resources
+            .get_buffer(staging)
+            .expect("buffer just created")
+            .raw;
+        let dst_raw = self
+            .resources
+            .get_buffer(dst)
+            .expect("buffer just created")
+            .raw;
+
+        let id = self
+            .transfer
+            .enqueue_buffer(src_raw, dst_raw, size, staging);
+        self.transfer.submit_pending()?;
+
+        Ok((Buffer(dst), id))
+    }
+
+    /// Uploads pixel data to an image asynchronously via the transfer queue.
+    /// The image is not usable until the returned [`TransferId`] completes.
+    pub(in crate::graph) fn upload_image_data_async(
+        &mut self,
+        dst: ImageHandle,
+        pixels: &[u8],
+        extent: vk::Extent3D,
+        mip_levels: u32,
+    ) -> Result<TransferId, GraphError> {
+        let staging = self.create_staging(pixels, "staging_upload_async")?;
+
+        let vk_img = self
+            .resources
+            .get_image(dst)
+            .expect("image just created")
+            .raw;
+        let stg_buf = self
+            .resources
+            .get_buffer(staging)
+            .expect("buffer just created")
+            .raw;
+
+        let region = vk::BufferImageCopy::default()
+            .image_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .image_extent(extent);
+
+        let subresource_range = vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: if mip_levels > 1 {
+                vk::REMAINING_MIP_LEVELS
+            } else {
+                1
+            },
+            base_array_layer: 0,
+            layer_count: 1,
+        };
+
+        let mip_gen = if mip_levels > 1 {
+            Some((extent, mip_levels))
+        } else {
+            None
+        };
+
+        let id = self
+            .transfer
+            .enqueue_image(super::transfer::ImageTransferDesc {
+                src: stg_buf,
+                dst: vk_img,
+                regions: vec![region],
+                staging_handle: staging,
+                subresource_range,
+                dst_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                mip_gen,
+            });
+        self.transfer.submit_pending()?;
+
+        Ok(id)
+    }
+
+    pub(crate) fn wait_for_transfer(&self, id: TransferId) -> Result<(), GraphError> {
+        self.transfer.wait_for(id)
     }
 }

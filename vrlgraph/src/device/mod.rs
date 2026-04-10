@@ -56,8 +56,10 @@ pub struct GpuDevice {
     swapchain: Swapchain,
     surface: Surface,
     queue: Queue,
+    transfer_queue: Option<Queue>,
     graphics_family: u32,
     present_family: u32,
+    transfer_family: Option<u32>,
     properties: vk::PhysicalDeviceProperties,
     memory_properties: vk::PhysicalDeviceMemoryProperties,
     physical_device: vk::PhysicalDevice,
@@ -89,7 +91,7 @@ impl GpuDevice {
             window_handle,
         )?;
 
-        let (physical_device, graphics_family, present_family) =
+        let (physical_device, graphics_family, present_family, transfer_family) =
             Self::pick_physical_device(&instance, &surface, prefer_integrated)?;
 
         let properties = unsafe {
@@ -105,15 +107,20 @@ impl GpuDevice {
 
         let name = unsafe { CStr::from_ptr(properties.device_name.as_ptr()) };
         info!("Selected GPU: {:?}", name);
+        if let Some(tf) = transfer_family {
+            info!("Dedicated transfer queue family: {}", tf);
+        }
 
         let device = Self::create_logical_device(
             &instance,
             physical_device,
             graphics_family,
             present_family,
+            transfer_family,
         )?;
 
         let queue = Queue::new(&device, graphics_family);
+        let transfer_queue = transfer_family.map(|f| Queue::new(&device, f));
 
         let allocator = Allocator::new(&AllocatorCreateDesc {
             instance: instance.raw().clone(),
@@ -151,7 +158,9 @@ impl GpuDevice {
             surface,
             graphics_family,
             present_family,
+            transfer_family,
             queue,
+            transfer_queue,
             properties,
             memory_properties,
             physical_device,
@@ -210,6 +219,15 @@ impl GpuDevice {
     pub fn present_family(&self) -> u32 {
         self.present_family
     }
+    pub fn transfer_family(&self) -> Option<u32> {
+        self.transfer_family
+    }
+    pub(crate) fn transfer_queue(&self) -> Option<&Queue> {
+        self.transfer_queue.as_ref()
+    }
+    pub fn has_dedicated_transfer(&self) -> bool {
+        self.transfer_family.is_some()
+    }
     pub(crate) fn allocator_mut(&mut self) -> &mut gpu_allocator::vulkan::Allocator {
         &mut self.allocator
     }
@@ -226,16 +244,18 @@ impl GpuDevice {
         instance: &Instance,
         surface: &Surface,
         prefer_integrated: bool,
-    ) -> Result<(vk::PhysicalDevice, u32, u32), DeviceError> {
+    ) -> Result<(vk::PhysicalDevice, u32, u32, Option<u32>), DeviceError> {
         let devices = unsafe { instance.raw().enumerate_physical_devices()? };
 
         devices
             .into_iter()
             .filter_map(|device| {
                 Self::check_device_suitability(instance, surface, device)
-                    .map(|(g, p)| (device, g, p))
+                    .map(|(g, p, t)| (device, g, p, t))
             })
-            .max_by_key(|(device, _, _)| Self::score_device(instance, *device, prefer_integrated))
+            .max_by_key(|(device, _, _, _)| {
+                Self::score_device(instance, *device, prefer_integrated)
+            })
             .ok_or(DeviceError::NoSuitableDevice)
     }
 
@@ -243,7 +263,7 @@ impl GpuDevice {
         instance: &Instance,
         surface: &Surface,
         device: vk::PhysicalDevice,
-    ) -> Option<(u32, u32)> {
+    ) -> Option<(u32, u32, Option<u32>)> {
         if !Self::supports_required_extensions(instance, device) {
             return None;
         }
@@ -270,7 +290,7 @@ impl GpuDevice {
         instance: &Instance,
         surface: &Surface,
         device: vk::PhysicalDevice,
-    ) -> Option<(u32, u32)> {
+    ) -> Option<(u32, u32, Option<u32>)> {
         let families = unsafe {
             instance
                 .raw()
@@ -285,14 +305,38 @@ impl GpuDevice {
             .position(|f| f.queue_flags.contains(required))
             .map(|i| i as u32)?;
 
-        if surface.supports_present(device, graphics).unwrap_or(false) {
-            return Some((graphics, graphics));
-        }
+        let present = if surface.supports_present(device, graphics).unwrap_or(false) {
+            graphics
+        } else {
+            (0..families.len() as u32)
+                .find(|&i| surface.supports_present(device, i).unwrap_or(false))?
+        };
 
-        let present = (0..families.len() as u32)
-            .find(|&i| surface.supports_present(device, i).unwrap_or(false))?;
+        let transfer = families
+            .iter()
+            .enumerate()
+            .position(|(i, f)| {
+                let i = i as u32;
+                i != graphics
+                    && f.queue_flags.contains(vk::QueueFlags::TRANSFER)
+                    && !f.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                    && !f.queue_flags.contains(vk::QueueFlags::COMPUTE)
+            })
+            .map(|i| i as u32)
+            .or_else(|| {
+                families
+                    .iter()
+                    .enumerate()
+                    .position(|(i, f)| {
+                        let i = i as u32;
+                        i != graphics
+                            && f.queue_flags.contains(vk::QueueFlags::TRANSFER)
+                            && !f.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                    })
+                    .map(|i| i as u32)
+            });
 
-        Some((graphics, present))
+        Some((graphics, present, transfer))
     }
 
     fn score_device(
@@ -321,22 +365,28 @@ impl GpuDevice {
         physical_device: vk::PhysicalDevice,
         graphics_family: u32,
         present_family: u32,
+        transfer_family: Option<u32>,
     ) -> Result<ash::Device, DeviceError> {
         let queue_priorities = [1.0f32];
 
-        let mut queue_create_infos = vec![
-            vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(graphics_family)
-                .queue_priorities(&queue_priorities),
-        ];
-
+        let mut unique_families = vec![graphics_family];
         if present_family != graphics_family {
-            queue_create_infos.push(
-                vk::DeviceQueueCreateInfo::default()
-                    .queue_family_index(present_family)
-                    .queue_priorities(&queue_priorities),
-            );
+            unique_families.push(present_family);
         }
+        if let Some(tf) = transfer_family
+            && !unique_families.contains(&tf)
+        {
+            unique_families.push(tf);
+        }
+
+        let queue_create_infos: Vec<_> = unique_families
+            .iter()
+            .map(|&family| {
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(family)
+                    .queue_priorities(&queue_priorities)
+            })
+            .collect();
 
         let extension_ptrs: Vec<*const i8> = REQUIRED_DEVICE_EXTENSIONS
             .iter()
@@ -378,6 +428,9 @@ impl GpuDevice {
             .shader_sampled_image_array_non_uniform_indexing(true)
             .shader_storage_image_array_non_uniform_indexing(true);
 
+        let mut timeline_semaphore =
+            vk::PhysicalDeviceTimelineSemaphoreFeatures::default().timeline_semaphore(true);
+
         let core_features = vk::PhysicalDeviceFeatures::default()
             .shader_int64(true)
             .depth_clamp(true);
@@ -393,7 +446,8 @@ impl GpuDevice {
             .push_next(&mut extended_dynamic_state3)
             .push_next(&mut multiview)
             .push_next(&mut buffer_device_address)
-            .push_next(&mut descriptor_indexing);
+            .push_next(&mut descriptor_indexing)
+            .push_next(&mut timeline_semaphore);
 
         let device = unsafe {
             instance

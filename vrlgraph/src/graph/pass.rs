@@ -3,7 +3,7 @@
 use ash::vk;
 
 use crate::resource::{
-    Buffer, BufferHandle, GpuBuffer, GpuImage, GpuPipeline, Pipeline, ResourcePool,
+    AsyncBuffer, Buffer, BufferHandle, GpuBuffer, GpuImage, GpuPipeline, Pipeline, ResourcePool,
     StreamingBufferHandle,
 };
 
@@ -11,6 +11,7 @@ use super::access::{Access, BufferUsage, LoadOp};
 use super::bindless::Sampler;
 use super::command::Cmd;
 use super::image::{Image, ImageEntry};
+use super::transfer::TransferManager;
 
 #[derive(Clone)]
 pub(crate) struct PassAccess {
@@ -109,6 +110,7 @@ impl sealed::Sealed for WithLoadOp {}
 impl sealed::Sealed for WithLayer {}
 impl sealed::Sealed for WithLayerLoadOp {}
 impl sealed::Sealed for (Buffer, BufferUsage) {}
+impl sealed::Sealed for (AsyncBuffer, BufferUsage) {}
 impl sealed::Sealed for (StreamingBufferHandle, BufferUsage) {}
 
 fn make_write_access(
@@ -252,6 +254,20 @@ impl WriteParam for (Buffer, BufferUsage) {
     }
 }
 
+impl ReadParam for (AsyncBuffer, BufferUsage) {
+    fn apply_read(self, ctx: &mut PassContext<'_>) {
+        let (handle, usage) = self;
+        ctx.buffer_reads.push(BufferAccess::new(handle.0, usage));
+    }
+}
+
+impl WriteParam for (AsyncBuffer, BufferUsage) {
+    fn apply_write(self, ctx: &mut PassContext<'_>) {
+        let (handle, usage) = self;
+        ctx.buffer_writes.push(BufferAccess::new(handle.0, usage));
+    }
+}
+
 impl ReadParam for (StreamingBufferHandle, BufferUsage) {
     fn apply_read(self, ctx: &mut PassContext<'_>) {
         let (handle, usage) = self;
@@ -282,6 +298,7 @@ impl WriteParam for (StreamingBufferHandle, BufferUsage) {
 pub struct FrameResources<'a> {
     pub(crate) images: &'a [ImageEntry],
     pub(crate) pool: &'a ResourcePool,
+    pub(crate) transfer: &'a TransferManager,
     pub(crate) frame_index: usize,
 }
 
@@ -289,11 +306,13 @@ impl<'a> FrameResources<'a> {
     pub(crate) fn new(
         images: &'a [ImageEntry],
         pool: &'a ResourcePool,
+        transfer: &'a TransferManager,
         frame_index: usize,
     ) -> Self {
         Self {
             images,
             pool,
+            transfer,
             frame_index,
         }
     }
@@ -337,7 +356,7 @@ impl<'a> FrameResources<'a> {
             .unwrap_or_else(|| panic!("layer {layer} out of range (count: {})", img.layer_count))
     }
 
-    /// Returns the [`GpuBuffer`] for a buffer handle.
+    /// Returns the [`GpuBuffer`] for a synchronous buffer handle.
     ///
     /// # Panics
     ///
@@ -346,6 +365,15 @@ impl<'a> FrameResources<'a> {
         self.pool
             .get_buffer(handle.0)
             .expect("buffer handle stale — destroyed before frame end")
+    }
+
+    /// Returns the [`GpuBuffer`] for an async buffer if its transfer has
+    /// completed, or `None` if the data is still being uploaded.
+    pub fn try_buffer(&self, handle: AsyncBuffer) -> Option<&GpuBuffer> {
+        if !self.transfer.is_buffer_ready_peek(handle.0) {
+            return None;
+        }
+        self.pool.get_buffer(handle.0)
     }
 
     /// Returns the [`GpuBuffer`] for the current frame's slot of a streaming buffer.

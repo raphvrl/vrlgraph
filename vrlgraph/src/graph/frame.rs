@@ -12,6 +12,7 @@ use super::pass::{
 };
 use super::query::{MAX_TIMESTAMP_PASSES, PassTiming};
 use super::resources::register_bindless;
+use super::transfer::AcquireKind;
 use super::{Frame, Graph, GraphError};
 use crate::resource::ResourcePool;
 
@@ -132,6 +133,14 @@ impl Graph {
         self.frames[idx]
             .deferred_frees
             .drain_into(&mut self.bindless);
+
+        {
+            let device = self.device.ash_device().clone();
+            let alloc = self.device.allocator_mut();
+            self.transfer
+                .cleanup_staging(&mut self.resources, &device, alloc);
+        }
+
         self.cleanup_frame();
 
         self.timestamps.last_timings.clear();
@@ -275,11 +284,8 @@ impl Graph {
             register_bindless(entry, &mut self.bindless, view);
         }
 
-        let mut img_states: Vec<BarrierState> = self
-            .images
-            .iter()
-            .map(BarrierState::from_entry)
-            .collect();
+        let mut img_states: Vec<BarrierState> =
+            self.images.iter().map(BarrierState::from_entry).collect();
 
         let raw = self.frames[self.frame_index].pool.reset_and_begin()?;
         let mut cmd = Cmd::new(
@@ -290,6 +296,71 @@ impl Graph {
         );
 
         cmd.bind_global_set(self.bindless.pipeline_layout(), self.bindless.set());
+
+        let acquires = self.transfer.take_completed_acquires();
+        let mip_gens = self.transfer.take_completed_mip_gens();
+        let transfer_timeline_value = if !acquires.is_empty() {
+            self.transfer.max_pending_timeline_value()
+        } else {
+            None
+        };
+
+        if !acquires.is_empty() {
+            let mut acq_img_barriers: SmallVec<[vk::ImageMemoryBarrier2<'_>; 4]> = SmallVec::new();
+            let mut acq_buf_barriers: SmallVec<[vk::BufferMemoryBarrier2<'_>; 4]> = SmallVec::new();
+            let gfx_family = self.device.graphics_family();
+            let xfer_family = self.transfer.transfer_family();
+
+            for a in &acquires {
+                match &a.kind {
+                    AcquireKind::Buffer { raw } => {
+                        acq_buf_barriers.push(
+                            vk::BufferMemoryBarrier2::default()
+                                .src_stage_mask(vk::PipelineStageFlags2::NONE)
+                                .src_access_mask(vk::AccessFlags2::NONE)
+                                .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+                                .dst_access_mask(
+                                    vk::AccessFlags2::SHADER_READ
+                                        | vk::AccessFlags2::VERTEX_ATTRIBUTE_READ
+                                        | vk::AccessFlags2::INDEX_READ,
+                                )
+                                .src_queue_family_index(xfer_family)
+                                .dst_queue_family_index(gfx_family)
+                                .buffer(*raw)
+                                .offset(0)
+                                .size(vk::WHOLE_SIZE),
+                        );
+                    }
+                    AcquireKind::Image {
+                        raw,
+                        dst_layout,
+                        subresource_range,
+                    } => {
+                        acq_img_barriers.push(
+                            vk::ImageMemoryBarrier2::default()
+                                .src_stage_mask(vk::PipelineStageFlags2::NONE)
+                                .src_access_mask(vk::AccessFlags2::NONE)
+                                .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+                                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                                .new_layout(*dst_layout)
+                                .src_queue_family_index(xfer_family)
+                                .dst_queue_family_index(gfx_family)
+                                .image(*raw)
+                                .subresource_range(*subresource_range),
+                        );
+                    }
+                }
+            }
+
+            cmd.pipeline_barrier2_mixed(&acq_img_barriers, &acq_buf_barriers);
+        }
+
+        if !mip_gens.is_empty() {
+            for mg in &mip_gens {
+                cmd.generate_mipmaps(mg.image, mg.extent, mg.mip_levels);
+            }
+        }
 
         if self.timestamps.is_enabled() {
             let pool = self.timestamps.pools[self.frame_index].raw();
@@ -492,7 +563,12 @@ impl Graph {
             }
 
             cmd.reset_dynamic_state();
-            let frame_res = FrameResources::new(&self.images, &self.resources, self.frame_index);
+            let frame_res = FrameResources::new(
+                &self.images,
+                &self.resources,
+                &self.transfer,
+                self.frame_index,
+            );
             (pass.execute)(&mut cmd, &frame_res);
 
             if is_graphics_pass {
@@ -549,9 +625,21 @@ impl Graph {
 
         let render_finished = self.sync.render_finished(ii);
 
-        let wait_info = vk::SemaphoreSubmitInfo::default()
+        let image_available_wait = vk::SemaphoreSubmitInfo::default()
             .semaphore(self.sync.image_available(fi))
             .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT);
+
+        let mut wait_infos: SmallVec<[vk::SemaphoreSubmitInfo<'_>; 2]> = SmallVec::new();
+        wait_infos.push(image_available_wait);
+
+        if let Some(tv) = transfer_timeline_value {
+            wait_infos.push(
+                vk::SemaphoreSubmitInfo::default()
+                    .semaphore(self.transfer.timeline_semaphore())
+                    .value(tv)
+                    .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS),
+            );
+        }
 
         let signal_info = vk::SemaphoreSubmitInfo::default()
             .semaphore(render_finished)
@@ -560,7 +648,7 @@ impl Graph {
         let cmd_info = vk::CommandBufferSubmitInfo::default().command_buffer(buffer);
 
         let submit_info = vk::SubmitInfo2::default()
-            .wait_semaphore_infos(std::slice::from_ref(&wait_info))
+            .wait_semaphore_infos(&wait_infos)
             .command_buffer_infos(std::slice::from_ref(&cmd_info))
             .signal_semaphore_infos(std::slice::from_ref(&signal_info));
 

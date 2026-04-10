@@ -16,6 +16,13 @@ new_key_type! {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Buffer(pub(crate) BufferHandle);
 
+/// An opaque handle to a GPU buffer whose data is being uploaded asynchronously.
+/// Use [`FrameResources::try_buffer`](crate::graph::FrameResources::try_buffer)
+/// to access the underlying buffer — it returns `None` while the transfer is
+/// still in progress.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct AsyncBuffer(pub(crate) BufferHandle);
+
 /// An opaque handle to a GPU pipeline.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Pipeline(pub(crate) PipelineHandle);

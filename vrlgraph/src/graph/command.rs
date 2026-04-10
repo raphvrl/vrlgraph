@@ -320,14 +320,15 @@ impl Cmd {
         #[cfg(debug_assertions)]
         if !self.pc_mismatch_warned.get()
             && let Some(reflected) = &self.reflected_pc
-                && T::PADDED_SIZE != reflected.total_size {
-                    self.pc_mismatch_warned.set(true);
-                    super::pipeline::validate::validate_push_constants(
-                        reflected,
-                        T::PADDED_SIZE,
-                        std::any::type_name::<T>(),
-                    );
-                }
+            && T::PADDED_SIZE != reflected.total_size
+        {
+            self.pc_mismatch_warned.set(true);
+            super::pipeline::validate::validate_push_constants(
+                reflected,
+                T::PADDED_SIZE,
+                std::any::type_name::<T>(),
+            );
+        }
         let mut buf = [0u8; 256];
         data.write_padded(&mut buf[..T::PADDED_SIZE]);
         self.push_constants_raw(&buf[..T::PADDED_SIZE]);
@@ -437,33 +438,6 @@ impl Cmd {
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 &vk::ClearColorValue { float32: color },
                 &[range],
-            )
-        };
-    }
-
-    pub(crate) fn copy_buffer_to_image(
-        &self,
-        buffer: vk::Buffer,
-        image: vk::Image,
-        extent: vk::Extent3D,
-        mip_level: u32,
-    ) {
-        let region = vk::BufferImageCopy::default()
-            .image_subresource(vk::ImageSubresourceLayers {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                mip_level,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .image_extent(extent);
-
-        unsafe {
-            self.device.cmd_copy_buffer_to_image(
-                self.raw,
-                buffer,
-                image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[region],
             )
         };
     }
@@ -657,20 +631,6 @@ impl Cmd {
             self.device
                 .cmd_write_timestamp2(self.raw, stage, pool, query)
         };
-    }
-
-    pub(crate) fn copy_buffer_to_buffer(
-        &self,
-        src: vk::Buffer,
-        dst: vk::Buffer,
-        size: vk::DeviceSize,
-    ) {
-        let region = vk::BufferCopy {
-            src_offset: 0,
-            dst_offset: 0,
-            size,
-        };
-        unsafe { self.device.cmd_copy_buffer(self.raw, src, dst, &[region]) };
     }
 
     /// Disables blending and sets the write mask to RGBA for `count` color

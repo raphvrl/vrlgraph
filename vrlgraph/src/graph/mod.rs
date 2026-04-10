@@ -19,6 +19,7 @@ mod query;
 mod resources;
 mod sampler;
 mod sync;
+mod transfer;
 mod transient;
 
 use std::path::PathBuf;
@@ -42,6 +43,7 @@ use pipeline::reload::{PipelineDesc, ShaderWatcher};
 use query::TimestampState;
 use resources::update_bindless;
 use sync::{FrameSync, SyncError};
+use transfer::TransferManager;
 use transient::TransientCache;
 
 pub use self::buffer::{GpuBufferBuilder, HostBufferBuilder};
@@ -205,6 +207,7 @@ pub struct Graph {
     pub(crate) frame_index: usize,
     pub(crate) sc_graph_image: Option<Image>,
     pub(crate) pending_resize: Option<(u32, u32)>,
+    pub(crate) transfer: TransferManager,
     pub(crate) spirv_module_cache: FxHashMap<PathBuf, vk::ShaderModule>,
     #[cfg(debug_assertions)]
     pub(crate) pipeline_descs: FxHashMap<PipelineHandle, PipelineDesc>,
@@ -263,6 +266,17 @@ impl Graph {
         let push_constant_size = device.properties().limits.max_push_constants_size.min(256);
         let bindless = BindlessDescriptorTable::new(device.ash_device(), push_constant_size)?;
 
+        let (xfer_queue, xfer_family) = match device.transfer_queue() {
+            Some(q) => (q.raw(), device.transfer_family().unwrap()),
+            None => (device.queue().raw(), device.graphics_family()),
+        };
+        let transfer = TransferManager::new(
+            device.ash_device().clone(),
+            xfer_queue,
+            xfer_family,
+            device.graphics_family(),
+        )?;
+
         Ok(Self {
             device,
             resources: ResourcePool::new(),
@@ -277,6 +291,7 @@ impl Graph {
             buffer_states: FxHashMap::default(),
             pipeline_cache,
             pipeline_cache_path,
+            transfer,
             transient_cache: TransientCache::new(),
             timestamps,
             pending_passes: Vec::new(),
@@ -467,6 +482,14 @@ impl Graph {
 
 impl Drop for Graph {
     fn drop(&mut self) {
+        let _ = self.transfer.wait_idle();
+        {
+            let device = self.device.ash_device().clone();
+            let alloc = self.device.allocator_mut();
+            self.transfer
+                .cleanup_staging(&mut self.resources, &device, alloc);
+        }
+
         unsafe {
             let device = self.device.ash_device();
 

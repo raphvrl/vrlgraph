@@ -451,8 +451,10 @@ impl<'g> TextureBuilder<'g> {
                 .upload_image_data_with_mips(handle, mip_data, extent)?;
         } else {
             let pixels = self.pixels.unwrap();
-            self.graph
-                .upload_image_data(handle, pixels, extent, mip_levels)?;
+            let id = self
+                .graph
+                .upload_image_data_async(handle, pixels, extent, mip_levels)?;
+            self.graph.wait_for_transfer(id)?;
         }
 
         let view = self
@@ -463,6 +465,89 @@ impl<'g> TextureBuilder<'g> {
             .view;
         let h = Image(self.graph.images.len() as u32);
         let mut entry = ImageEntry::loaded(desc, handle);
+        register_bindless(&mut entry, &mut self.graph.bindless, view);
+        self.graph.images.push(entry);
+        self.graph.persistent_count += 1;
+        Ok(h)
+    }
+
+    /// Uploads texture data via the transfer queue without blocking.
+    /// The image data is uploaded asynchronously — use [`FrameResources::try_buffer`]
+    /// pattern to check readiness.
+    ///
+    /// Only supports single-level pixel data (not pre-computed mip_data).
+    /// Mipmap generation is deferred to the graphics queue after the transfer completes.
+    pub fn build_async(self) -> Result<Image, GraphError> {
+        assert!(
+            !self.graph.frame_active,
+            "load_texture().build_async() must be called outside the frame loop"
+        );
+        assert!(
+            self.pixels.is_some(),
+            "TextureBuilder: pixels() is required for build_async()"
+        );
+        assert!(
+            self.mip_data.is_none(),
+            "TextureBuilder: mip_data() is not supported with build_async(), use build() instead"
+        );
+
+        let width = self.width.expect("TextureBuilder: extent() is required");
+        let height = self.height.expect("TextureBuilder: extent() is required");
+        let format = self.format.expect("TextureBuilder: format() is required");
+
+        let extent = vk::Extent3D {
+            width,
+            height,
+            depth: 1,
+        };
+
+        let mip_levels = if self.mip_levels == 0 {
+            compute_mip_levels(width, height)
+        } else {
+            self.mip_levels
+        };
+
+        let usage = vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_DST
+            | vk::ImageUsageFlags::TRANSFER_SRC;
+
+        let desc = ImageDesc {
+            extent,
+            format,
+            mip_levels,
+            samples: SampleCount::S1,
+            kind: ImageKind::Image2D,
+            label: self.label,
+            usage: vk::ImageUsageFlags::empty(),
+        };
+
+        let aspect = vk::ImageAspectFlags::COLOR;
+
+        let device = self.graph.device.ash_device().clone();
+        let handle = self.graph.resources.create_image(
+            &device,
+            self.graph.device.allocator_mut(),
+            &desc,
+            usage,
+            aspect,
+        )?;
+
+        let pixels = self.pixels.unwrap();
+        let _id = self
+            .graph
+            .upload_image_data_async(handle, pixels, extent, mip_levels)?;
+
+        let view = self
+            .graph
+            .resources
+            .get_image(handle)
+            .expect("image just created")
+            .view;
+        let h = Image(self.graph.images.len() as u32);
+        let mut entry = ImageEntry::loaded(desc, handle);
+        entry.layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+        entry.stage = vk::PipelineStageFlags2::TRANSFER;
+        entry.access = vk::AccessFlags2::TRANSFER_WRITE;
         register_bindless(&mut entry, &mut self.graph.bindless, view);
         self.graph.images.push(entry);
         self.graph.persistent_count += 1;

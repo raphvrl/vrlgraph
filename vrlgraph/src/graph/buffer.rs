@@ -2,7 +2,7 @@ use ash::vk;
 use gpu_allocator::MemoryLocation;
 
 use super::{Graph, GraphError};
-use crate::resource::{Buffer, BufferDesc, StreamingBufferHandle};
+use crate::resource::{AsyncBuffer, Buffer, BufferDesc, StreamingBufferHandle};
 
 pub struct HostBufferBuilder<'g> {
     graph: &'g mut Graph,
@@ -121,11 +121,12 @@ impl<'g> GpuBufferBuilder<'g> {
             Ok(buf)
         } else {
             match &self.data {
-                Some(bytes) => self.graph.upload_buffer_labeled(
-                    bytes,
-                    self.usage | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-                    &self.label,
-                ),
+                Some(bytes) => {
+                    let usage = self.usage | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
+                    let (buf, id) = self.graph.upload_buffer_async(bytes, usage, &self.label)?;
+                    self.graph.wait_for_transfer(id)?;
+                    Ok(buf)
+                }
                 None => Ok(self.graph.create_buffer(&BufferDesc {
                     size,
                     usage: self.usage | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -134,6 +135,19 @@ impl<'g> GpuBufferBuilder<'g> {
                 })?),
             }
         }
+    }
+
+    /// Uploads data to a GPU-only buffer via the transfer queue without blocking.
+    /// Returns an [`AsyncBuffer`] — use [`FrameResources::try_buffer`] in your
+    /// pass to access the data once the transfer completes.
+    pub fn build_async(self) -> Result<AsyncBuffer, GraphError> {
+        let bytes = self
+            .data
+            .expect("GpuBufferBuilder: call data() before build_async()");
+        let usage = self.usage | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
+        let (buf, id) = self.graph.upload_buffer_async(&bytes, usage, &self.label)?;
+        self.graph.transfer.track_buffer(buf.0, id);
+        Ok(AsyncBuffer(buf.0))
     }
 }
 

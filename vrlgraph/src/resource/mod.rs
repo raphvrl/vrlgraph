@@ -31,7 +31,7 @@ pub enum ResourceError {
 pub use buffer::{BufferDesc, GpuBuffer};
 #[cfg(debug_assertions)]
 pub(crate) use handle::ShaderModuleHandle;
-pub use handle::{Buffer, ImageHandle, Pipeline, SamplerHandle, ShaderModule};
+pub use handle::{AsyncBuffer, Buffer, ImageHandle, Pipeline, SamplerHandle, ShaderModule};
 pub(crate) use handle::{BufferHandle, PipelineHandle};
 pub(crate) use image::ImageDesc;
 pub use image::{GpuImage, ImageKind};
