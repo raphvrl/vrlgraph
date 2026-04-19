@@ -129,6 +129,19 @@ impl GpuBuffer {
         }
     }
 
+    /// Writes a [`DynShaderType`](crate::DynShaderType) value (e.g. a struct
+    /// with a `Vec<T>` tail field) with automatic scalar-layout padding.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is not host-visible.
+    pub fn write_dyn<T: crate::DynShaderType>(&self, value: &T) {
+        let size = value.padded_size();
+        let mut buf = vec![0u8; size];
+        value.write_padded_dyn(&mut buf);
+        self.write_bytes(&buf);
+    }
+
     /// Copies a slice of [`Pod`](bytemuck::Pod) values into the buffer via the
     /// CPU-mapped pointer.
     ///

@@ -178,8 +178,19 @@ fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
 /// **glam types** (with the `glam` feature): `Vec2`, `Vec3`, `Vec3A`, `Vec4`,
 /// `UVec2`–`UVec4`, `IVec2`–`IVec4`, `Mat3`, `Mat4`
 ///
+/// **Dynamic arrays:** `Vec<T>` as the **last field only** — switches the
+/// generated impl from `ShaderType` to [`DynShaderType`](vrlgraph::DynShaderType).
+/// Use `write_buffer_dyn` / `GpuBuffer::write_dyn` instead of `write_buffer`.
+///
 /// For unsupported types, annotate the field with `#[align(N)]` where `N` is
 /// the required alignment (must be a power of two).
+///
+/// # Performance note
+///
+/// Prefer `[T; N]` over `Vec<T>` when the element count is known at compile
+/// time. Fixed-size structs are `Copy`, their padded size is a compile-time
+/// constant, and serialization uses a stack buffer — no heap allocation.
+/// `Vec<T>` fields allocate a temporary `Vec<u8>` on every write.
 ///
 /// # Example
 ///

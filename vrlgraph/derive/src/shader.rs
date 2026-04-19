@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Fields, LitInt};
+use syn::{Data, DeriveInput, Fields, GenericArgument, LitInt, PathArguments, Type};
 
 pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
     let name = &input.ident;
@@ -23,11 +23,36 @@ pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
+    let fields: Vec<_> = named_fields.iter().collect();
+
+    for (i, field) in fields.iter().enumerate() {
+        if extract_vec_inner(&field.ty).is_some() && i != fields.len() - 1 {
+            return Err(syn::Error::new_spanned(
+                field.ident.as_ref().unwrap(),
+                "`Vec<T>` fields must be the last field \
+                 (GPU runtime arrays must appear at the end of a storage block)",
+            ));
+        }
+    }
+
+    let last_is_vec = fields
+        .last()
+        .and_then(|f| extract_vec_inner(&f.ty))
+        .is_some();
+
+    if last_is_vec {
+        impl_dyn_shader_type(name, &fields)
+    } else {
+        impl_static_shader_type(name, &fields)
+    }
+}
+
+fn impl_static_shader_type(name: &syn::Ident, fields: &[&syn::Field]) -> syn::Result<TokenStream> {
     let mut const_decls: Vec<TokenStream> = Vec::new();
     let mut write_stmts: Vec<TokenStream> = Vec::new();
     let mut align_exprs: Vec<TokenStream> = Vec::new();
 
-    for (i, field) in named_fields.iter().enumerate() {
+    for (i, field) in fields.iter().enumerate() {
         let field_name = field.ident.as_ref().unwrap();
         let field_ty = &field.ty;
         let offset_ident = format_ident!("__OFF_{}", i);
@@ -68,10 +93,10 @@ pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
         .rev()
         .fold(quote! { 1usize }, |acc, a| quote! { const_max(#a, #acc) });
 
-    let last_end = if named_fields.is_empty() {
+    let last_end = if fields.is_empty() {
         quote! { 0usize }
     } else {
-        let last = format_ident!("__END_{}", named_fields.len() - 1);
+        let last = format_ident!("__END_{}", fields.len() - 1);
         quote! { #last }
     };
 
@@ -106,6 +131,135 @@ pub fn impl_shader_type(input: DeriveInput) -> syn::Result<TokenStream> {
             }
         }
     })
+}
+
+fn impl_dyn_shader_type(name: &syn::Ident, fields: &[&syn::Field]) -> syn::Result<TokenStream> {
+    let fixed_count = fields.len() - 1;
+    let fixed_fields = &fields[..fixed_count];
+    let vec_field = fields[fixed_count];
+    let vec_field_name = vec_field.ident.as_ref().unwrap();
+    let vec_inner_ty = extract_vec_inner(&vec_field.ty).unwrap();
+
+    let all_field_names: Vec<_> = fields.iter().map(|f| f.ident.as_ref().unwrap()).collect();
+
+    let mut const_decls: Vec<TokenStream> = Vec::new();
+    let mut fixed_write_stmts: Vec<TokenStream> = Vec::new();
+    let mut align_exprs: Vec<TokenStream> = Vec::new();
+
+    for (i, field) in fixed_fields.iter().enumerate() {
+        let field_name = field.ident.as_ref().unwrap();
+        let field_ty = &field.ty;
+        let offset_ident = format_ident!("__OFF_{}", i);
+        let end_ident = format_ident!("__END_{}", i);
+
+        let (align_expr, size_expr) = match parse_align_override(&field.attrs)? {
+            Some(val) => (quote! { #val }, quote! { #val }),
+            None => (
+                quote! { <#field_ty as ::vrlgraph::ShaderType>::SCALAR_ALIGN },
+                quote! { <#field_ty as ::vrlgraph::ShaderType>::PADDED_SIZE },
+            ),
+        };
+
+        let prev_end = if i == 0 {
+            quote! { 0usize }
+        } else {
+            let prev = format_ident!("__END_{}", i - 1);
+            quote! { #prev }
+        };
+
+        const_decls.push(quote! {
+            const #offset_ident: usize = ::vrlgraph::round_up(#prev_end, #align_expr);
+            const #end_ident: usize = #offset_ident + #size_expr;
+        });
+
+        fixed_write_stmts.push(quote! {
+            <#field_ty as ::vrlgraph::ShaderType>::write_padded(
+                &self.#field_name,
+                &mut dst[#offset_ident..#end_ident],
+            );
+        });
+
+        align_exprs.push(align_expr);
+    }
+
+    align_exprs.push(quote! { <#vec_inner_ty as ::vrlgraph::ShaderType>::SCALAR_ALIGN });
+
+    let max_align_expr = align_exprs
+        .iter()
+        .rev()
+        .fold(quote! { 1usize }, |acc, a| quote! { const_max(#a, #acc) });
+
+    let head_end = if fixed_fields.is_empty() {
+        quote! { 0usize }
+    } else {
+        let last = format_ident!("__END_{}", fixed_count - 1);
+        quote! { #last }
+    };
+
+    Ok(quote! {
+        impl Clone for #name {
+            fn clone(&self) -> Self {
+                Self {
+                    #(#all_field_names: self.#all_field_names.clone(),)*
+                }
+            }
+        }
+
+        impl ::vrlgraph::DynShaderType for #name {
+            fn scalar_align(&self) -> usize {
+                const fn const_max(a: usize, b: usize) -> usize {
+                    if a > b { a } else { b }
+                }
+                #max_align_expr
+            }
+
+            fn padded_size(&self) -> usize {
+                const fn const_max(a: usize, b: usize) -> usize {
+                    if a > b { a } else { b }
+                }
+                #(#const_decls)*
+                const __VEC_OFF: usize = ::vrlgraph::round_up(
+                    #head_end,
+                    <#vec_inner_ty as ::vrlgraph::ShaderType>::SCALAR_ALIGN,
+                );
+                let vec_size = <#vec_inner_ty as ::vrlgraph::ShaderType>::PADDED_SIZE
+                    * self.#vec_field_name.len();
+                ::vrlgraph::round_up(__VEC_OFF + vec_size, self.scalar_align())
+            }
+
+            fn write_padded_dyn(&self, dst: &mut [u8]) {
+                #(#const_decls)*
+                #(#fixed_write_stmts)*
+                const __VEC_OFF: usize = ::vrlgraph::round_up(
+                    #head_end,
+                    <#vec_inner_ty as ::vrlgraph::ShaderType>::SCALAR_ALIGN,
+                );
+                let elem_size = <#vec_inner_ty as ::vrlgraph::ShaderType>::PADDED_SIZE;
+                for (i, item) in self.#vec_field_name.iter().enumerate() {
+                    let off = __VEC_OFF + i * elem_size;
+                    <#vec_inner_ty as ::vrlgraph::ShaderType>::write_padded(
+                        item,
+                        &mut dst[off..off + elem_size],
+                    );
+                }
+            }
+        }
+    })
+}
+
+fn extract_vec_inner(ty: &Type) -> Option<&Type> {
+    if let Type::Path(type_path) = ty {
+        let last = type_path.path.segments.last()?;
+        if last.ident != "Vec" {
+            return None;
+        }
+        if let PathArguments::AngleBracketed(args) = &last.arguments {
+            if let Some(GenericArgument::Type(inner)) = args.args.first() {
+                return Some(inner);
+            }
+        }
+    }
+    None
 }
 
 fn parse_align_override(attrs: &[syn::Attribute]) -> syn::Result<Option<usize>> {

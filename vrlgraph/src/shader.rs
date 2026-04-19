@@ -1,3 +1,31 @@
+/// Trait for types whose GPU layout size and alignment is known at compile time.
+///
+/// Implemented automatically by `#[derive(ShaderType)]` for structs with no `Vec<T>` fields.
+/// All such types also implement [`DynShaderType`] via a blanket impl.
+///
+/// Use [`DynShaderType`] when you need to accept both fixed-size and dynamic types.
+pub trait DynShaderType {
+    fn scalar_align(&self) -> usize;
+    fn padded_size(&self) -> usize;
+    fn write_padded_dyn(&self, dst: &mut [u8]);
+}
+
+impl<T: ShaderType> DynShaderType for T {
+    fn scalar_align(&self) -> usize { T::SCALAR_ALIGN }
+    fn padded_size(&self) -> usize { T::PADDED_SIZE }
+    fn write_padded_dyn(&self, dst: &mut [u8]) { self.write_padded(dst) }
+}
+
+impl<T: ShaderType> DynShaderType for Vec<T> {
+    fn scalar_align(&self) -> usize { T::SCALAR_ALIGN }
+    fn padded_size(&self) -> usize { T::PADDED_SIZE * self.len() }
+    fn write_padded_dyn(&self, dst: &mut [u8]) {
+        for (i, elem) in self.iter().enumerate() {
+            elem.write_padded(&mut dst[i * T::PADDED_SIZE..]);
+        }
+    }
+}
+
 /// Trait for types that can be serialized to GPU-compatible padded byte layouts
 /// using **scalar layout** (`VK_EXT_scalar_block_layout`).
 ///
@@ -16,6 +44,17 @@
 /// Derive this trait with `#[derive(ShaderType)]` on a struct to automatically
 /// generate `Clone`, `Copy`, and a [`write_padded`](ShaderType::write_padded)
 /// implementation that inserts the correct padding for scalar layout.
+///
+/// # Fixed-size vs dynamic fields
+///
+/// Prefer fixed-size arrays (`[T; N]`) over `Vec<T>` whenever the maximum
+/// element count is known at compile time. Fixed-size structs implement `Copy`,
+/// their size is a compile-time constant, and `write_padded` writes directly
+/// into a stack buffer — no heap allocation occurs.
+///
+/// Use `Vec<T>` only when the count is truly dynamic at runtime. A struct with
+/// a `Vec<T>` tail field derives [`DynShaderType`] instead of `ShaderType`:
+/// it is not `Copy`, and writing it allocates a temporary `Vec<u8>` on the heap.
 ///
 /// # Example
 ///

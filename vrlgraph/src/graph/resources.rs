@@ -236,6 +236,15 @@ impl Graph {
             .write(value);
     }
 
+    /// Writes a [`DynShaderType`](crate::DynShaderType) value (e.g. a struct
+    /// with a `Vec<T>` tail field) into a buffer with automatic scalar-layout padding.
+    pub fn write_buffer_dyn<T: crate::DynShaderType>(&self, handle: Buffer, value: &T) {
+        self.resources
+            .get_buffer(handle.0)
+            .expect("write_buffer_dyn: invalid buffer handle")
+            .write_dyn(value);
+    }
+
     /// Writes a slice of [`Pod`](bytemuck::Pod) values into a buffer.
     pub fn write_buffer_slice<T: bytemuck::Pod>(&self, handle: Buffer, data: &[T]) {
         self.resources
