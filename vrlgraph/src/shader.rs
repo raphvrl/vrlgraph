@@ -72,6 +72,7 @@ impl<T: ShaderType> DynShaderType for Vec<T> {
 pub trait ShaderType {
     const SCALAR_ALIGN: usize;
     const PADDED_SIZE: usize;
+    const UNPADDED_SIZE: usize = Self::PADDED_SIZE;
 
     fn write_padded(&self, dst: &mut [u8]);
 }

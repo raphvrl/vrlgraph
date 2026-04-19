@@ -125,6 +125,11 @@ fn impl_static_shader_type(name: &syn::Ident, fields: &[&syn::Field]) -> syn::Re
                 ::vrlgraph::round_up(#last_end, #max_align_expr)
             };
 
+            const UNPADDED_SIZE: usize = {
+                #(#const_decls)*
+                #last_end
+            };
+
             fn write_padded(&self, dst: &mut [u8]) {
                 #(#const_decls)*
                 #(#write_stmts)*

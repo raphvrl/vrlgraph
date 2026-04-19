@@ -63,7 +63,7 @@ pub(crate) fn validate_push_constants(
 
     tracing::warn!(
         "push_constants size mismatch:\n  \
-         Rust type `{rust_type}` PADDED_SIZE = {rust_size}\n  \
+         Rust type `{rust_type}` UNPADDED_SIZE = {rust_size}\n  \
          SPIR-V push_constant block size = {}{detail}",
         reflected.total_size,
     );

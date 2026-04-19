@@ -320,12 +320,12 @@ impl Cmd {
         #[cfg(debug_assertions)]
         if !self.pc_mismatch_warned.get()
             && let Some(reflected) = &self.reflected_pc
-            && T::PADDED_SIZE != reflected.total_size
+            && T::UNPADDED_SIZE != reflected.total_size
         {
             self.pc_mismatch_warned.set(true);
             super::pipeline::validate::validate_push_constants(
                 reflected,
-                T::PADDED_SIZE,
+                T::UNPADDED_SIZE,
                 std::any::type_name::<T>(),
             );
         }
