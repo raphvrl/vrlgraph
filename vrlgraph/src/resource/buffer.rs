@@ -111,35 +111,24 @@ impl GpuBuffer {
         self.allocation.mapped_ptr().map(|p| p.as_ptr() as *mut u8)
     }
 
-    /// Writes a [`ShaderType`](crate::ShaderType) value with automatic
-    /// scalar-layout padding.
+    /// Writes a [`ShaderType`](crate::ShaderType) or
+    /// [`DynShaderType`](crate::DynShaderType) value (e.g. a struct with a
+    /// `Vec<T>` tail field) with automatic scalar-layout padding.
     ///
     /// # Panics
     ///
     /// Panics if the buffer is not host-visible.
-    pub fn write<T: crate::ShaderType>(&self, value: &T) {
-        if T::PADDED_SIZE <= 256 {
+    pub fn write<T: crate::DynShaderType>(&self, value: &T) {
+        let size = value.padded_size();
+        if size <= 256 {
             let mut buf = [0u8; 256];
-            value.write_padded(&mut buf[..T::PADDED_SIZE]);
-            self.write_bytes(&buf[..T::PADDED_SIZE]);
+            value.write_padded_dyn(&mut buf[..size]);
+            self.write_bytes(&buf[..size]);
         } else {
-            let mut buf = vec![0u8; T::PADDED_SIZE];
-            value.write_padded(&mut buf);
+            let mut buf = vec![0u8; size];
+            value.write_padded_dyn(&mut buf);
             self.write_bytes(&buf);
         }
-    }
-
-    /// Writes a [`DynShaderType`](crate::DynShaderType) value (e.g. a struct
-    /// with a `Vec<T>` tail field) with automatic scalar-layout padding.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the buffer is not host-visible.
-    pub fn write_dyn<T: crate::DynShaderType>(&self, value: &T) {
-        let size = value.padded_size();
-        let mut buf = vec![0u8; size];
-        value.write_padded_dyn(&mut buf);
-        self.write_bytes(&buf);
     }
 
     /// Copies a slice of [`Pod`](bytemuck::Pod) values into the buffer via the

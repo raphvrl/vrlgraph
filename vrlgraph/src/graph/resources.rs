@@ -227,22 +227,14 @@ impl Graph {
             .destroy_buffer(&device, self.device.allocator_mut(), handle);
     }
 
-    /// Writes a [`ShaderType`](crate::ShaderType) value into a buffer
-    /// with automatic scalar-layout padding.
-    pub fn write_buffer<T: crate::ShaderType>(&self, handle: Buffer, value: &T) {
+    /// Writes a [`ShaderType`](crate::ShaderType) or
+    /// [`DynShaderType`](crate::DynShaderType) value (e.g. a struct with a
+    /// `Vec<T>` tail field) into a buffer with automatic scalar-layout padding.
+    pub fn write_buffer<T: crate::DynShaderType>(&self, handle: Buffer, value: &T) {
         self.resources
             .get_buffer(handle.0)
             .expect("write_buffer: invalid buffer handle")
             .write(value);
-    }
-
-    /// Writes a [`DynShaderType`](crate::DynShaderType) value (e.g. a struct
-    /// with a `Vec<T>` tail field) into a buffer with automatic scalar-layout padding.
-    pub fn write_buffer_dyn<T: crate::DynShaderType>(&self, handle: Buffer, value: &T) {
-        self.resources
-            .get_buffer(handle.0)
-            .expect("write_buffer_dyn: invalid buffer handle")
-            .write_dyn(value);
     }
 
     /// Writes a slice of [`Pod`](bytemuck::Pod) values into a buffer.

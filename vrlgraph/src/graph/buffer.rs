@@ -28,10 +28,10 @@ impl<'g> HostBufferBuilder<'g> {
         self
     }
 
-    pub fn data<T: crate::ShaderType>(mut self, value: &T) -> Self {
-        let padded = T::PADDED_SIZE;
+    pub fn data<T: crate::DynShaderType>(mut self, value: &T) -> Self {
+        let padded = value.padded_size();
         let mut buf = vec![0u8; padded];
-        value.write_padded(&mut buf);
+        value.write_padded_dyn(&mut buf);
         self.size = Some(padded as vk::DeviceSize);
         self.data = Some(buf);
         self

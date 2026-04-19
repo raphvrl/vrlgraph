@@ -180,7 +180,8 @@ fn parse_format_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Ident>> {
 ///
 /// **Dynamic arrays:** `Vec<T>` as the **last field only** — switches the
 /// generated impl from `ShaderType` to [`DynShaderType`](vrlgraph::DynShaderType).
-/// Use `write_buffer_dyn` / `GpuBuffer::write_dyn` instead of `write_buffer`.
+/// The buffer APIs (`write_buffer`, `GpuBuffer::write`, `HostBufferBuilder::data`)
+/// accept both traits transparently.
 ///
 /// For unsupported types, annotate the field with `#[align(N)]` where `N` is
 /// the required alignment (must be a power of two).
