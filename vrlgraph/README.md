@@ -273,8 +273,12 @@ graph.render_pass("stereo_geometry")
 
 Transient images live for a single frame. The graph allocates and destroys them automatically. Use them for intermediate results that are not needed across frames. When no extent is specified, the swapchain extent is used.
 
+Transient images must be declared inside a `begin_frame()` scope; their lifetime is bound to the current frame.
+
 ```rust,ignore
-let gbuffer_albedo = graph.transient_image()
+let mut frame = graph.begin_frame()?;
+
+let gbuffer_albedo = frame.transient_image()
     .format(vk::Format::R8G8B8A8_UNORM)
     .label("gbuffer_albedo")
     .build()?;

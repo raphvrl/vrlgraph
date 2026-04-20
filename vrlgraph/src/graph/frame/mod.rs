@@ -6,7 +6,7 @@ pub use pass_setup::PassSetup;
 
 use ash::vk;
 
-use super::image::Image;
+use super::image::{Image, ImageBuilder, ImageOrigin};
 use super::schedule::pass::RecordedPass;
 use super::{Graph, GraphError};
 
@@ -33,6 +33,35 @@ pub struct FrameBuilder<'frame> {
 impl<'frame> FrameBuilder<'frame> {
     pub fn graph(&mut self) -> &mut Graph {
         self.graph
+    }
+
+    /// Declares a transient image local to this frame.
+    ///
+    /// Transient images are allocated (via the transient cache) when the
+    /// frame is submitted and their graph-side bookkeeping is freed at
+    /// frame end (on [`submit`](Self::submit) success the cleanup happens
+    /// at the start of the next frame; on drop it happens immediately).
+    /// They cannot outlive the frame.
+    ///
+    /// When no extent is specified, the swapchain extent is used.
+    ///
+    /// ```no_run
+    /// use vrlgraph::prelude::*;
+    /// # fn demo(frame: &mut gpu::FrameBuilder<'_>) -> Result<(), gpu::GraphError> {
+    /// let scratch = frame.transient_image()
+    ///     .format(vk::Format::R8G8B8A8_UNORM)
+    ///     .label("scratch")
+    ///     .build()?;
+    ///
+    /// let bb = frame.backbuffer;
+    /// frame.render_pass("use_scratch")
+    ///     .read((scratch, gpu::Access::ShaderRead))
+    ///     .write((bb, gpu::Access::ColorAttachment))
+    ///     .execute(|_cmd| {});
+    /// # Ok(()) }
+    /// ```
+    pub fn transient_image(&mut self) -> ImageBuilder<'_> {
+        ImageBuilder::new(self.graph, ImageOrigin::Transient)
     }
 
     pub fn render_pass<'a>(&'a mut self, name: &'static str) -> PassSetup<'a, 'frame> {
