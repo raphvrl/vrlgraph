@@ -22,7 +22,11 @@ pub struct ImageBuilder<'g> {
 }
 
 impl<'g> ImageBuilder<'g> {
-    pub(in crate::graph) fn new(graph: &'g mut Graph, origin: ImageOrigin) -> Self {
+    pub(in crate::graph) fn new(
+        graph: &'g mut Graph,
+        origin: ImageOrigin,
+        label: impl Into<String>,
+    ) -> Self {
         Self {
             graph,
             origin,
@@ -33,7 +37,7 @@ impl<'g> ImageBuilder<'g> {
             mip_levels: 1,
             samples: SampleCount::S1,
             kind: ImageKind::Image2D,
-            label: String::new(),
+            label: label.into(),
             usage: vk::ImageUsageFlags::empty(),
             resizable: false,
         }
@@ -79,11 +83,6 @@ impl<'g> ImageBuilder<'g> {
 
     pub fn cubemap_array(mut self, count: u32) -> Self {
         self.kind = ImageKind::CubemapArray { count };
-        self
-    }
-
-    pub fn label(mut self, label: impl Into<String>) -> Self {
-        self.label = label.into();
         self
     }
 

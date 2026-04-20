@@ -12,7 +12,7 @@ use super::sampler::SamplerBuilder;
 
 impl Graph {
     pub fn persistent_image(&mut self, label: impl Into<String>) -> ImageBuilder<'_> {
-        ImageBuilder::new(self, ImageOrigin::Persistent).label(label)
+        ImageBuilder::new(self, ImageOrigin::Persistent, label)
     }
 
     pub fn load_texture(&mut self, label: impl Into<String>) -> TextureBuilder<'_> {

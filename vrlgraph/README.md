@@ -278,9 +278,8 @@ Transient images must be declared inside a `begin_frame()` scope; their lifetime
 ```rust,ignore
 let mut frame = graph.begin_frame()?;
 
-let gbuffer_albedo = frame.transient_image()
+let gbuffer_albedo = frame.transient_image("gbuffer_albedo")
     .format(vk::Format::R8G8B8A8_UNORM)
-    .label("gbuffer_albedo")
     .build()?;
 ```
 
@@ -346,7 +345,7 @@ let albedo_bc7 = graph.load_texture("wood_albedo_bc7")
 | `.usage(vk::ImageUsageFlags)` | no | empty | Additional Vulkan usage flags |
 | `.resizable()` | no | `false` | Auto-recreate on window resize (persistent only) |
 
-The label is provided as the first argument to `persistent_image(label)` and `load_texture(label)`.
+The label is provided as the first argument to `transient_image(label)`, `persistent_image(label)`, and `load_texture(label)`.
 
 ### Texture builder methods
 

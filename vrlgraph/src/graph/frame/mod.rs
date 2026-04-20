@@ -48,9 +48,8 @@ impl<'frame> FrameBuilder<'frame> {
     /// ```no_run
     /// use vrlgraph::prelude::*;
     /// # fn demo(frame: &mut gpu::FrameBuilder<'_>) -> Result<(), gpu::GraphError> {
-    /// let scratch = frame.transient_image()
+    /// let scratch = frame.transient_image("scratch")
     ///     .format(vk::Format::R8G8B8A8_UNORM)
-    ///     .label("scratch")
     ///     .build()?;
     ///
     /// let bb = frame.backbuffer;
@@ -60,8 +59,8 @@ impl<'frame> FrameBuilder<'frame> {
     ///     .execute(|_cmd| {});
     /// # Ok(()) }
     /// ```
-    pub fn transient_image(&mut self) -> ImageBuilder<'_> {
-        ImageBuilder::new(self.graph, ImageOrigin::Transient)
+    pub fn transient_image(&mut self, label: impl Into<String>) -> ImageBuilder<'_> {
+        ImageBuilder::new(self.graph, ImageOrigin::Transient, label)
     }
 
     pub fn render_pass<'a>(&'a mut self, name: &'static str) -> PassSetup<'a, 'frame> {
