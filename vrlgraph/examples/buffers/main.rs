@@ -125,8 +125,8 @@ impl common::Example for State {
         self.graph
             .write_buffer(self.transform_buf, &Transform { matrix });
 
-        let transform_addr = self.graph.buffer_device_address(self.transform_buf);
-        let colors_addr = self.graph.buffer_device_address(self.colors_buf);
+        let transform_addr = self.transform_buf.address();
+        let colors_addr = self.colors_buf.address();
 
         let mut frame = self.graph.begin_frame()?;
         let backbuffer = frame.backbuffer;

@@ -111,9 +111,15 @@ impl Graph {
 
     pub fn create_buffer(&mut self, desc: &BufferDesc) -> Result<Buffer, ResourceError> {
         let device = self.device.ash_device().clone();
-        self.resources
-            .create_buffer(&device, self.device.allocator_mut(), desc)
-            .map(Buffer)
+        let handle = self
+            .resources
+            .create_buffer(&device, self.device.allocator_mut(), desc)?;
+        let address = self
+            .resources
+            .get_buffer(handle)
+            .expect("buffer just created")
+            .device_address;
+        Ok(Buffer(handle, address))
     }
 
     pub fn destroy_buffer(&mut self, handle: Buffer) {
@@ -133,13 +139,6 @@ impl Graph {
 
     pub fn get_buffer(&self, handle: Buffer) -> Option<&GpuBuffer> {
         self.resources.get_buffer(handle.0)
-    }
-
-    pub fn buffer_device_address(&self, handle: Buffer) -> vk::DeviceAddress {
-        self.resources
-            .get_buffer(handle.0)
-            .expect("buffer_device_address: invalid handle")
-            .device_address
     }
 
     pub fn create_streaming_buffer(
@@ -486,18 +485,19 @@ impl Graph {
             .get_buffer(staging)
             .expect("buffer just created")
             .raw;
-        let dst_raw = self
+        let dst_buf = self
             .resources
             .get_buffer(dst)
-            .expect("buffer just created")
-            .raw;
+            .expect("buffer just created");
+        let dst_raw = dst_buf.raw;
+        let dst_addr = dst_buf.device_address;
 
         let id = self
             .transfer
             .enqueue_buffer(src_raw, dst_raw, size, staging);
         self.transfer.submit_pending()?;
 
-        Ok((Buffer(dst), id))
+        Ok((Buffer(dst, dst_addr), id))
     }
 
     /// Uploads pixel data to an image asynchronously via the transfer queue.

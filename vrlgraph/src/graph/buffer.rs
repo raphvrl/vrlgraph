@@ -147,7 +147,7 @@ impl<'g> GpuBufferBuilder<'g> {
         let usage = self.usage | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
         let (buf, id) = self.graph.upload_buffer_async(&bytes, usage, &self.label)?;
         self.graph.transfer.track_buffer(buf.0, id);
-        Ok(AsyncBuffer(buf.0))
+        Ok(AsyncBuffer(buf.0, buf.1))
     }
 }
 
