@@ -91,21 +91,22 @@ impl common::Example for State {
     fn draw(&mut self) -> Result<(), GraphError> {
         self.window.request_redraw();
 
-        let frame = self.graph.begin_frame()?;
+        let mut frame = self.graph.begin_frame()?;
+        let backbuffer = frame.backbuffer;
+        let extent = frame.extent;
 
-        let fill_pipe = self.fill_pipeline;
-        let composite_pipe = self.composite_pipeline;
-        let array_image = self.array_image;
-        let sampler = self.sampler;
         let layer_extent = vk::Extent2D {
             width: 256,
             height: 256,
         };
 
+        let fill_pipe = self.fill_pipeline;
+        let array_image = self.array_image;
+
         for i in 0..4u32 {
             let color = LAYER_COLORS[i as usize];
 
-            self.graph
+            frame
                 .render_pass(LAYER_NAMES[i as usize])
                 .write(WithLayerClearColor(
                     array_image,
@@ -121,21 +122,21 @@ impl common::Example for State {
                 });
         }
 
-        self.graph
+        frame
             .render_pass("composite")
-            .read((array_image, Access::ShaderRead))
-            .write((frame.backbuffer, Access::ColorAttachment))
-            .execute(move |cmd| {
-                cmd.bind_graphics_pipeline(composite_pipe);
-                cmd.set_viewport_scissor(frame.extent);
+            .read((self.array_image, Access::ShaderRead))
+            .write((backbuffer, Access::ColorAttachment))
+            .execute(|cmd| {
+                cmd.bind_graphics_pipeline(self.composite_pipeline);
+                cmd.set_viewport_scissor(extent);
                 cmd.push_constants(&CompositeParams {
-                    array_idx: cmd.array_index(array_image),
-                    sampler_idx: cmd.sampler_index(sampler),
+                    array_idx: cmd.array_index(self.array_image),
+                    sampler_idx: cmd.sampler_index(self.sampler),
                 });
                 cmd.draw(3, 1);
             });
 
-        self.graph.end_frame(frame)?;
+        frame.submit()?;
         Ok(())
     }
 

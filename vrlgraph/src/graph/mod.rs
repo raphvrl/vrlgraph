@@ -1,8 +1,8 @@
 //! Render graph — pass declaration, frame execution, and resource management.
 //!
 //! The main entry point is [`Graph`]. Build one with [`Graph::builder`], then
-//! call [`Graph::begin_frame`] / [`Graph::end_frame`] each frame with passes
-//! declared in between.
+//! call [`Graph::begin_frame`] each frame to obtain a [`FrameBuilder`] on
+//! which passes are declared and submitted with [`FrameBuilder::submit`].
 
 mod access;
 mod barrier;
@@ -53,7 +53,7 @@ pub use access::{Access, BufferUsage, LoadOp};
 pub use bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Sampler, Storage};
 pub use builder::{GpuPreference, GraphBuilder, PresentMode};
 pub use command::Cmd;
-pub use frame::PassSetup;
+pub use frame::{FrameBuilder, PassSetup};
 pub use pass::{
     ReadParam, WithClearColor, WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
     WriteParam,
@@ -98,25 +98,6 @@ pub enum GraphError {
     PassCycle(&'static str),
 }
 
-/// Per-frame data returned by [`Graph::begin_frame`].
-///
-/// `backbuffer` is the swapchain image for this frame — write to it as a
-/// color attachment to put pixels on screen. `extent` reflects the current
-/// surface size and should be used for viewport/scissor setup. `resized` is
-/// `true` only on the first frame after a window resize (bindless descriptors
-/// are updated automatically).
-pub struct Frame {
-    /// The swapchain image for this frame. Declare it as a write target with
-    /// [`Access::ColorAttachment`] in the final render pass.
-    pub backbuffer: Image,
-    /// Current surface dimensions. Use this for viewport and scissor setup.
-    pub extent: vk::Extent2D,
-    /// Swapchain image index for this frame.
-    pub index: u32,
-    /// `true` on the first frame after the window was resized.
-    pub resized: bool,
-}
-
 #[derive(Default)]
 pub(crate) struct DeferredBindlessFrees {
     sampled: Vec<BindlessIndex<Sampled>>,
@@ -158,10 +139,10 @@ pub(crate) struct FrameData {
 /// The render graph.
 ///
 /// `Graph` owns the Vulkan device, the swapchain, all GPU resources, and the
-/// frame timeline. You interact with it by declaring passes between
-/// [`begin_frame`](Graph::begin_frame) and [`end_frame`](Graph::end_frame).
-/// The graph resolves pass dependencies, inserts pipeline barriers, and
-/// submits all work at `end_frame`.
+/// frame timeline. You interact with it by calling [`begin_frame`](Graph::begin_frame)
+/// to obtain a [`FrameBuilder`], declaring passes on it, then calling
+/// [`FrameBuilder::submit`]. The graph resolves pass dependencies, inserts
+/// pipeline barriers, and submits all work on `submit`.
 ///
 /// # Example
 ///
@@ -174,15 +155,16 @@ pub(crate) struct FrameData {
 ///     .size(1280, 720)
 ///     .build()?;
 ///
-/// let frame = graph.begin_frame()?;
+/// let mut frame = graph.begin_frame()?;
+/// let backbuffer = frame.backbuffer;
 ///
-/// graph.render_pass("main")
-///     .write((frame.backbuffer, Access::ColorAttachment))
-///     .execute(move |cmd| {
+/// frame.render_pass("main")
+///     .write((backbuffer, Access::ColorAttachment))
+///     .execute(|cmd| {
 ///         // record commands
 ///     });
 ///
-/// graph.end_frame(frame)?;
+/// frame.submit()?;
 /// # Ok(())
 /// # }
 /// ```
@@ -201,7 +183,6 @@ pub struct Graph {
     pub(crate) pipeline_cache_path: Option<PathBuf>,
     pub(crate) transient_cache: TransientCache,
     pub(crate) timestamps: TimestampState,
-    pub(crate) pending_passes: Vec<RecordedPass>,
     pub(crate) frame_active: bool,
     pub(crate) image_index: u32,
     pub(crate) frame_index: usize,
@@ -294,7 +275,6 @@ impl Graph {
             transfer,
             transient_cache: TransientCache::new(),
             timestamps,
-            pending_passes: Vec::new(),
             frame_active: false,
             image_index: 0,
             frame_index: 0,
@@ -439,7 +419,7 @@ impl Graph {
         Ok(any_recreated)
     }
 
-    pub(crate) fn collect_live_images(&self, passes: &[RecordedPass]) -> FxHashSet<u32> {
+    pub(crate) fn collect_live_images(&self, passes: &[RecordedPass<'_>]) -> FxHashSet<u32> {
         let mut live = FxHashSet::default();
 
         if let Some(sc) = self.sc_graph_image {

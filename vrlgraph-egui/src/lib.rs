@@ -148,10 +148,9 @@ impl EguiRenderer {
         Ok(())
     }
 
-    pub fn paint(
+    pub fn paint<'frame>(
         &mut self,
-        graph: &mut Graph,
-        frame: &Frame,
+        frame: &mut FrameBuilder<'frame>,
         primitives: &[egui::ClippedPrimitive],
         pixels_per_point: f32,
     ) -> Result<(), GraphError> {
@@ -165,10 +164,14 @@ impl EguiRenderer {
         let vertex_byte_len = (self.vertices.len() * size_of::<EguiVertex>()) as u64;
         let index_byte_len = (self.indices.len() * size_of::<u32>()) as u64;
 
-        self.ensure_buffer_capacity(graph, fi, vertex_byte_len, index_byte_len)?;
+        self.ensure_buffer_capacity(frame.graph(), fi, vertex_byte_len, index_byte_len)?;
 
-        graph.write_buffer_slice(self.vertex_bufs[fi], &self.vertices);
-        graph.write_buffer_slice(self.index_bufs[fi], &self.indices);
+        frame
+            .graph()
+            .write_buffer_slice(self.vertex_bufs[fi], &self.vertices);
+        frame
+            .graph()
+            .write_buffer_slice(self.index_bufs[fi], &self.indices);
 
         let pipeline = self.pipeline;
         let sampler = self.sampler;
@@ -179,6 +182,7 @@ impl EguiRenderer {
             frame.extent.height as f32 / pixels_per_point,
         ];
         let extent = frame.extent;
+        let backbuffer = frame.backbuffer;
 
         let mut tex_images: Vec<(egui::Rect, Image, u32, u32, i32)> = Vec::new();
         for dc in &self.draw_calls {
@@ -198,10 +202,10 @@ impl EguiRenderer {
             }
         }
 
-        graph
+        frame
             .render_pass("egui")
             .write(WithLoadOp(
-                frame.backbuffer,
+                backbuffer,
                 Access::ColorAttachment,
                 LoadOp::Load,
             ))

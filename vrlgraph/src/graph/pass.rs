@@ -38,7 +38,7 @@ impl BufferAccess {
     }
 }
 
-pub(crate) struct RecordedPass {
+pub(crate) struct RecordedPass<'frame> {
     pub name: &'static str,
     pub reads: Vec<PassAccess>,
     pub writes: Vec<PassAccess>,
@@ -46,10 +46,10 @@ pub(crate) struct RecordedPass {
     pub buffer_writes: Vec<BufferAccess>,
 
     pub view_mask: u32,
-    pub execute: ExecuteFn,
+    pub execute: ExecuteFn<'frame>,
 }
 
-type ExecuteFn = Box<dyn for<'a> FnOnce(&mut Cmd<'a>)>;
+type ExecuteFn<'frame> = Box<dyn for<'a> FnOnce(&mut Cmd<'a>) + 'frame>;
 
 pub(crate) struct PassContext<'a> {
     pub reads: &'a mut Vec<PassAccess>,
@@ -83,8 +83,8 @@ pub trait WriteParam: sealed::Sealed {
 ///
 /// ```rust,no_run
 /// # use vrlgraph::prelude::*;
-/// # fn example(graph: &mut Graph, target: Image) {
-/// graph.render_pass("accumulate")
+/// # fn example(frame: &mut FrameBuilder<'_>, target: Image) {
+/// frame.render_pass("accumulate")
 ///     .write(WithLoadOp(target, Access::ColorAttachment, LoadOp::Load))
 ///     .execute(|cmd| { /* ... */ });
 /// # }
@@ -193,9 +193,10 @@ impl WriteParam for WithLayerLoadOp {
 /// ```rust,no_run
 /// # use vrlgraph::prelude::*;
 /// # use vrlgraph::graph::WithClearColor;
-/// # fn example(graph: &mut Graph, frame: &Frame) {
-/// graph.render_pass("main")
-///     .write(WithClearColor(frame.backbuffer, Access::ColorAttachment, [0.1, 0.2, 0.3, 1.0]))
+/// # fn example(frame: &mut FrameBuilder<'_>) {
+/// let backbuffer = frame.backbuffer;
+/// frame.render_pass("main")
+///     .write(WithClearColor(backbuffer, Access::ColorAttachment, [0.1, 0.2, 0.3, 1.0]))
 ///     .execute(|cmd| { /* ... */ });
 /// # }
 /// ```

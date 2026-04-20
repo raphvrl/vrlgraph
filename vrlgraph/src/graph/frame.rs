@@ -13,11 +13,31 @@ use super::pass::{
 use super::query::{MAX_TIMESTAMP_PASSES, PassTiming};
 use super::resources::register_bindless;
 use super::transfer::AcquireKind;
-use super::{Frame, Graph, GraphError};
+use super::{Graph, GraphError};
 use crate::resource::ResourcePool;
 
-pub struct PassSetup<'g> {
-    graph: &'g mut Graph,
+/// In-flight frame returned by [`Graph::begin_frame`].
+///
+/// Holds the per-frame state and accumulates pass declarations. Submit GPU
+/// work with [`submit`](FrameBuilder::submit). Dropping the builder without
+/// calling `submit` discards the frame (rolls back transient state).
+#[must_use = "FrameBuilder must be submitted with .submit() — dropping it discards the frame"]
+pub struct FrameBuilder<'frame> {
+    pub(crate) graph: &'frame mut Graph,
+    /// The swapchain image for this frame. Declare it as a write target with
+    /// [`Access::ColorAttachment`] in the final render pass.
+    pub backbuffer: Image,
+    /// Current surface dimensions. Use this for viewport and scissor setup.
+    pub extent: vk::Extent2D,
+    /// Swapchain image index for this frame.
+    pub index: u32,
+    /// `true` on the first frame after the window was resized.
+    pub resized: bool,
+    pub(crate) pending_passes: Vec<RecordedPass<'frame>>,
+}
+
+pub struct PassSetup<'a, 'frame> {
+    builder: &'a mut FrameBuilder<'frame>,
     name: &'static str,
     reads: Vec<PassAccess>,
     writes: Vec<PassAccess>,
@@ -26,9 +46,9 @@ pub struct PassSetup<'g> {
     view_mask: u32,
 }
 
-impl<'g> PassSetup<'g> {
+impl<'a, 'frame> PassSetup<'a, 'frame> {
     fn with_ctx(&mut self, f: impl FnOnce(&mut PassContext<'_>)) {
-        let graph = &mut *self.graph;
+        let graph = &mut *self.builder.graph;
         let mut ctx = PassContext {
             reads: &mut self.reads,
             writes: &mut self.writes,
@@ -76,10 +96,10 @@ impl<'g> PassSetup<'g> {
 
     pub fn execute<F>(self, f: F)
     where
-        F: for<'a> FnOnce(&mut Cmd<'a>) + 'static,
+        F: for<'b> FnOnce(&mut Cmd<'b>) + 'frame,
     {
         let PassSetup {
-            graph,
+            builder,
             name,
             reads,
             writes,
@@ -87,7 +107,7 @@ impl<'g> PassSetup<'g> {
             buffer_writes,
             view_mask,
         } = self;
-        graph.pending_passes.push(RecordedPass {
+        builder.pending_passes.push(RecordedPass {
             name,
             reads,
             writes,
@@ -99,10 +119,14 @@ impl<'g> PassSetup<'g> {
     }
 }
 
-impl Graph {
-    pub fn render_pass(&mut self, name: &'static str) -> PassSetup<'_> {
+impl<'frame> FrameBuilder<'frame> {
+    pub fn graph(&mut self) -> &mut Graph {
+        self.graph
+    }
+
+    pub fn render_pass<'a>(&'a mut self, name: &'static str) -> PassSetup<'a, 'frame> {
         PassSetup {
-            graph: self,
+            builder: self,
             name,
             reads: Vec::new(),
             writes: Vec::new(),
@@ -112,11 +136,35 @@ impl Graph {
         }
     }
 
-    pub fn compute_pass(&mut self, name: &'static str) -> PassSetup<'_> {
+    pub fn compute_pass<'a>(&'a mut self, name: &'static str) -> PassSetup<'a, 'frame> {
         self.render_pass(name)
     }
 
-    pub fn begin_frame(&mut self) -> Result<Frame, GraphError> {
+    /// Submits all declared passes to the GPU and presents the frame.
+    pub fn submit(mut self) -> Result<(), GraphError> {
+        let pending = std::mem::take(&mut self.pending_passes);
+        match self.graph.execute_frame(pending) {
+            Ok(()) => {
+                self.graph.frame_active = false;
+                std::mem::forget(self);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl<'frame> Drop for FrameBuilder<'frame> {
+    fn drop(&mut self) {
+        // Rollback path when the user drops the builder without calling submit().
+        // cleanup_frame() releases transients and clears frame_active. This
+        // matches the existing error path in the previous end_frame().
+        self.graph.cleanup_frame();
+    }
+}
+
+impl Graph {
+    pub fn begin_frame(&mut self) -> Result<FrameBuilder<'_>, GraphError> {
         debug_assert!(
             !self.frame_active,
             "begin_frame called while a frame is already active (missing end_frame?)"
@@ -210,29 +258,20 @@ impl Graph {
             .push(ImageEntry::external(raw_img, raw_view, extent));
         self.sc_graph_image = Some(backbuffer);
 
-        Ok(Frame {
+        Ok(FrameBuilder {
+            graph: self,
             backbuffer,
             extent,
             index: idx as u32,
             resized,
+            pending_passes: Vec::new(),
         })
     }
 
-    pub fn end_frame(&mut self, frame: Frame) -> Result<(), GraphError> {
-        match self.execute_frame(frame) {
-            Ok(()) => {
-                self.frame_active = false;
-                Ok(())
-            }
-            Err(e) => {
-                self.cleanup_frame();
-                Err(e)
-            }
-        }
-    }
-
-    fn execute_frame(&mut self, _frame: Frame) -> Result<(), GraphError> {
-        let pending = std::mem::take(&mut self.pending_passes);
+    pub(crate) fn execute_frame(
+        &mut self,
+        pending: Vec<RecordedPass<'_>>,
+    ) -> Result<(), GraphError> {
         let live_images = self.collect_live_images(&pending);
         let passes = dag::sort_and_cull_passes(pending, &live_images)
             .map_err(|e| GraphError::PassCycle(e.pass_name))?;

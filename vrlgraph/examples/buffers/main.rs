@@ -125,28 +125,26 @@ impl common::Example for State {
         self.graph
             .write_buffer(self.transform_buf, &Transform { matrix });
 
-        let frame = self.graph.begin_frame()?;
-
         let transform_addr = self.graph.buffer_device_address(self.transform_buf);
         let colors_addr = self.graph.buffer_device_address(self.colors_buf);
 
-        let pipeline = self.pipeline;
-        let vertex_buf = self.vertex_buf;
-        let index_buf = self.index_buf;
+        let mut frame = self.graph.begin_frame()?;
+        let backbuffer = frame.backbuffer;
+        let extent = frame.extent;
 
-        self.graph
+        frame
             .render_pass("mesh")
-            .read((vertex_buf, BufferUsage::VertexRead))
-            .read((index_buf, BufferUsage::IndexRead))
+            .read((self.vertex_buf, BufferUsage::VertexRead))
+            .read((self.index_buf, BufferUsage::IndexRead))
             .read((self.transform_buf, BufferUsage::UniformRead))
             .read((self.colors_buf, BufferUsage::StorageRead))
-            .write((frame.backbuffer, Access::ColorAttachment))
-            .execute(move |cmd| {
-                cmd.bind_graphics_pipeline(pipeline);
-                cmd.set_viewport_scissor(frame.extent);
+            .write((backbuffer, Access::ColorAttachment))
+            .execute(|cmd| {
+                cmd.bind_graphics_pipeline(self.pipeline);
+                cmd.set_viewport_scissor(extent);
 
-                cmd.bind_vertex_buffer(vertex_buf, 0);
-                cmd.bind_index_buffer(index_buf, 0);
+                cmd.bind_vertex_buffer(self.vertex_buf, 0);
+                cmd.bind_index_buffer(self.index_buf, 0);
 
                 cmd.push_constants(&PC {
                     transform_addr,
@@ -156,7 +154,7 @@ impl common::Example for State {
                 cmd.draw_indexed(INDICES.len() as u32, 1, 0, 0);
             });
 
-        self.graph.end_frame(frame)?;
+        frame.submit()?;
         Ok(())
     }
 

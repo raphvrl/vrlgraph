@@ -17,10 +17,10 @@ pub use vrlgraph_derive::{ShaderType, VertexInput};
 pub mod prelude {
 
     pub use crate::graph::{
-        Access, Array2D, BindlessIndex, BufferUsage, Cmd, ComputePipelineBuilder, Cubemap, Frame,
-        GpuPreference, Graph, GraphError, Image, LoadOp, PassTiming, PresentMode, Sampled, Sampler,
-        SamplerBuilder, Storage, StreamingBufferHandle, WithClearColor, WithLayer,
-        WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
+        Access, Array2D, BindlessIndex, BufferUsage, Cmd, ComputePipelineBuilder, Cubemap,
+        FrameBuilder, GpuPreference, Graph, GraphError, Image, LoadOp, PassTiming, PresentMode,
+        Sampled, Sampler, SamplerBuilder, Storage, StreamingBufferHandle, WithClearColor,
+        WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
     };
 
     pub use crate::resource::{AsyncBuffer, Buffer, BufferDesc, ImageKind, Pipeline, ShaderModule};

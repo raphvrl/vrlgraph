@@ -7,7 +7,7 @@ use super::image::{ImageEntry, ImageOrigin};
 use super::pass::RecordedPass;
 
 fn compute_lifetimes(
-    passes: &[RecordedPass],
+    passes: &[RecordedPass<'_>],
     images: &[ImageEntry],
     persistent_count: usize,
 ) -> Vec<Option<(usize, usize)>> {
@@ -107,7 +107,7 @@ impl TransientCache {
     pub fn allocate(
         &mut self,
         images: &mut [ImageEntry],
-        passes: &[RecordedPass],
+        passes: &[RecordedPass<'_>],
         persistent_count: usize,
         resources: &mut ResourcePool,
         device: &ash::Device,
@@ -212,7 +212,7 @@ mod tests {
         }
     }
 
-    fn make_pass(name: &'static str, write_ids: &[u32], read_ids: &[u32]) -> RecordedPass {
+    fn make_pass(name: &'static str, write_ids: &[u32], read_ids: &[u32]) -> RecordedPass<'static> {
         RecordedPass {
             name,
             reads: read_ids.iter().copied().map(img_access).collect(),

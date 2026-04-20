@@ -85,44 +85,43 @@ impl common::Example for State {
     fn draw(&mut self) -> Result<(), GraphError> {
         self.window.request_redraw();
 
-        let frame = self.graph.begin_frame()?;
         let time = self.start.elapsed().as_secs_f32();
 
-        let stereo_pipe = self.stereo_pipeline;
-        let compose_pipe = self.compose_pipeline;
-        let stereo_image = self.stereo_image;
-        let sampler = self.sampler;
+        let mut frame = self.graph.begin_frame()?;
+        let backbuffer = frame.backbuffer;
+        let extent = frame.extent;
+
         let stereo_extent = vk::Extent2D {
             width: 512,
             height: 512,
         };
 
-        self.graph
+        frame
             .render_pass("stereo_geometry")
-            .write((stereo_image, Access::ColorAttachment))
+            .write((self.stereo_image, Access::ColorAttachment))
             .multiview(0b11)
-            .execute(move |cmd| {
-                cmd.bind_graphics_pipeline(stereo_pipe);
+            .execute(|cmd| {
+                cmd.bind_graphics_pipeline(self.stereo_pipeline);
                 cmd.set_viewport_scissor(stereo_extent);
                 cmd.push_constants(&StereoParams { time });
                 cmd.draw(3, 1);
             });
 
-        self.graph
+        frame
             .render_pass("compose")
-            .read((stereo_image, Access::ShaderRead))
-            .write((frame.backbuffer, Access::ColorAttachment))
-            .execute(move |cmd| {
-                cmd.bind_graphics_pipeline(compose_pipe);
-                cmd.set_viewport_scissor(frame.extent);
+            .read((self.stereo_image, Access::ShaderRead))
+            .write((backbuffer, Access::ColorAttachment))
+            .execute(|cmd| {
+                cmd.bind_graphics_pipeline(self.compose_pipeline);
+                cmd.set_viewport_scissor(extent);
                 cmd.push_constants(&ComposeParams {
-                    array_idx: cmd.array_index(stereo_image),
-                    sampler_idx: cmd.sampler_index(sampler),
+                    array_idx: cmd.array_index(self.stereo_image),
+                    sampler_idx: cmd.sampler_index(self.sampler),
                 });
                 cmd.draw(3, 1);
             });
 
-        self.graph.end_frame(frame)?;
+        frame.submit()?;
         Ok(())
     }
 

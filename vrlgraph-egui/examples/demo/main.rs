@@ -81,21 +81,21 @@ impl State {
         self.egui_renderer
             .prepare(&mut self.graph, &output.textures_delta)?;
 
-        let frame = self.graph.begin_frame()?;
+        let mut frame = self.graph.begin_frame()?;
+        let backbuffer = frame.backbuffer;
 
-        self.graph
+        frame
             .render_pass("clear")
             .write(WithClearColor(
-                frame.backbuffer,
+                backbuffer,
                 Access::ColorAttachment,
                 [0.1, 0.1, 0.1, 1.0],
             ))
             .execute(|_| {});
 
-        self.egui_renderer
-            .paint(&mut self.graph, &frame, &primitives, ppp)?;
+        self.egui_renderer.paint(&mut frame, &primitives, ppp)?;
 
-        self.graph.end_frame(frame)?;
+        frame.submit()?;
         Ok(())
     }
 }

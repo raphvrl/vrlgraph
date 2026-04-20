@@ -102,41 +102,39 @@ impl State {
         self.egui_renderer
             .prepare(&mut self.graph, &output.textures_delta)?;
 
-        let frame = self.graph.begin_frame()?;
-
-        let pipeline = self.triangle_pipeline;
-        let offscreen = self.offscreen_image;
         let offscreen_extent = vk::Extent2D {
             width: OFFSCREEN_SIZE,
             height: OFFSCREEN_SIZE,
         };
 
-        self.graph
+        let mut frame = self.graph.begin_frame()?;
+        let backbuffer = frame.backbuffer;
+
+        frame
             .render_pass("offscreen_triangle")
             .write(WithClearColor(
-                offscreen,
+                self.offscreen_image,
                 Access::ColorAttachment,
                 [0.0, 0.0, 0.2, 1.0],
             ))
-            .execute(move |cmd| {
-                cmd.bind_graphics_pipeline(pipeline);
+            .execute(|cmd| {
+                cmd.bind_graphics_pipeline(self.triangle_pipeline);
                 cmd.set_viewport_scissor(offscreen_extent);
                 cmd.draw(3, 1);
             });
 
-        self.graph
+        frame
             .render_pass("clear")
             .write(WithClearColor(
-                frame.backbuffer,
+                backbuffer,
                 Access::ColorAttachment,
                 [0.1, 0.1, 0.1, 1.0],
             ))
             .execute(|_| {});
 
-        self.egui_renderer
-            .paint(&mut self.graph, &frame, &primitives, ppp)?;
+        self.egui_renderer.paint(&mut frame, &primitives, ppp)?;
 
-        self.graph.end_frame(frame)?;
+        frame.submit()?;
         Ok(())
     }
 }

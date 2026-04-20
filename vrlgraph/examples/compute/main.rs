@@ -76,47 +76,44 @@ impl common::Example for State {
     fn draw(&mut self) -> Result<(), GraphError> {
         self.window.request_redraw();
 
-        let frame = self.graph.begin_frame()?;
+        let mut frame = self.graph.begin_frame()?;
+        let backbuffer = frame.backbuffer;
+        let extent = frame.extent;
+        let width = extent.width;
+        let height = extent.height;
 
-        let width = frame.extent.width;
-        let height = frame.extent.height;
-        let compute_pipe = self.compute_pipeline;
-        let graphics_pipe = self.graphics_pipeline;
-        let storage_image = self.storage_image;
-        let sampler = self.sampler;
-
-        self.graph
+        frame
             .compute_pass("fill")
-            .write((storage_image, Access::ComputeWrite))
-            .execute(move |cmd| {
-                cmd.bind_compute_pipeline(compute_pipe);
+            .write((self.storage_image, Access::ComputeWrite))
+            .execute(|cmd| {
+                cmd.bind_compute_pipeline(self.compute_pipeline);
 
                 cmd.push_constants(&FillParams {
                     width,
                     height,
-                    storage_idx: cmd.storage_index(storage_image),
+                    storage_idx: cmd.storage_index(self.storage_image),
                 });
 
                 cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
             });
 
-        self.graph
+        frame
             .render_pass("blit")
-            .read((storage_image, Access::ShaderRead))
-            .write((frame.backbuffer, Access::ColorAttachment))
-            .execute(move |cmd| {
-                cmd.bind_graphics_pipeline(graphics_pipe);
+            .read((self.storage_image, Access::ShaderRead))
+            .write((backbuffer, Access::ColorAttachment))
+            .execute(|cmd| {
+                cmd.bind_graphics_pipeline(self.graphics_pipeline);
 
-                cmd.set_viewport_scissor(frame.extent);
+                cmd.set_viewport_scissor(extent);
 
                 cmd.push_constants(&BlitParams {
-                    sampled_idx: cmd.sampled_index(storage_image),
-                    sampler_idx: cmd.sampler_index(sampler),
+                    sampled_idx: cmd.sampled_index(self.storage_image),
+                    sampler_idx: cmd.sampler_index(self.sampler),
                 });
                 cmd.draw(3, 1);
             });
 
-        self.graph.end_frame(frame)?;
+        frame.submit()?;
         Ok(())
     }
 

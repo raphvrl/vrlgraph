@@ -41,26 +41,24 @@ impl common::Example for State {
     fn draw(&mut self) -> Result<(), GraphError> {
         self.window.request_redraw();
 
-        let frame = self.graph.begin_frame()?;
-
-        let pipeline = self.pipeline;
-        let extent = frame.extent;
+        let mut frame = self.graph.begin_frame()?;
         let backbuffer = frame.backbuffer;
+        let extent = frame.extent;
 
-        self.graph
+        frame
             .render_pass("triangle")
             .write(WithClearColor(
                 backbuffer,
                 Access::ColorAttachment,
                 [0.1, 0.2, 0.3, 1.0],
             ))
-            .execute(move |cmd| {
-                cmd.bind_graphics_pipeline(pipeline);
+            .execute(|cmd| {
+                cmd.bind_graphics_pipeline(self.pipeline);
                 cmd.set_viewport_scissor(extent);
                 cmd.draw(3, 1);
             });
 
-        self.graph.end_frame(frame)?;
+        frame.submit()?;
         Ok(())
     }
 

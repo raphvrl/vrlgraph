@@ -11,10 +11,10 @@ pub(super) struct CycleError {
     pub pass_name: &'static str,
 }
 
-pub(super) fn sort_and_cull_passes(
-    passes: Vec<RecordedPass>,
+pub(super) fn sort_and_cull_passes<'frame>(
+    passes: Vec<RecordedPass<'frame>>,
     live_images: &FxHashSet<u32>,
-) -> Result<Vec<RecordedPass>, CycleError> {
+) -> Result<Vec<RecordedPass<'frame>>, CycleError> {
     if passes.is_empty() {
         return Ok(passes);
     }
@@ -89,7 +89,7 @@ pub(super) fn sort_and_cull_passes(
         pass_name: passes[graph[cycle.node_id()]].name,
     })?;
 
-    let mut slots: Vec<Option<RecordedPass>> = passes.into_iter().map(Some).collect();
+    let mut slots: Vec<Option<RecordedPass<'frame>>> = passes.into_iter().map(Some).collect();
 
     let result = sorted
         .into_iter()
@@ -128,7 +128,7 @@ mod tests {
         }
     }
 
-    fn make_pass(name: &'static str, write_ids: &[u32], read_ids: &[u32]) -> RecordedPass {
+    fn make_pass(name: &'static str, write_ids: &[u32], read_ids: &[u32]) -> RecordedPass<'static> {
         RecordedPass {
             name,
             reads: read_ids.iter().copied().map(img_access).collect(),
@@ -190,7 +190,7 @@ mod tests {
         name: &'static str,
         buf_writes: &[BufferHandle],
         buf_reads: &[BufferHandle],
-    ) -> RecordedPass {
+    ) -> RecordedPass<'static> {
         use crate::graph::pass::BufferAccess;
         RecordedPass {
             name,
