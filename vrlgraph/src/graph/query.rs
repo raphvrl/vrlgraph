@@ -1,6 +1,6 @@
 use ash::vk;
 
-pub(super) const MAX_TIMESTAMP_PASSES: u32 = 64;
+pub(in crate::graph) const MAX_TIMESTAMP_PASSES: u32 = 64;
 
 #[derive(Debug, Clone)]
 pub struct PassTiming {

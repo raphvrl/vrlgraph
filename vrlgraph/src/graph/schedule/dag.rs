@@ -7,11 +7,11 @@ use super::pass::RecordedPass;
 use crate::resource::BufferHandle;
 
 #[derive(Debug)]
-pub(super) struct CycleError {
+pub(in crate::graph) struct CycleError {
     pub pass_name: &'static str,
 }
 
-pub(super) fn sort_and_cull_passes<'frame>(
+pub(in crate::graph) fn sort_and_cull_passes<'frame>(
     passes: Vec<RecordedPass<'frame>>,
     live_images: &FxHashSet<u32>,
 ) -> Result<Vec<RecordedPass<'frame>>, CycleError> {
@@ -110,9 +110,9 @@ mod tests {
     use rustc_hash::FxHashSet;
 
     use super::*;
-    use crate::graph::access::LoadOp;
+    use super::super::access::LoadOp;
+    use super::super::pass::PassAccess;
     use crate::graph::image::Image;
-    use crate::graph::pass::PassAccess;
 
     fn img_access(id: u32) -> PassAccess {
         PassAccess {
@@ -191,7 +191,7 @@ mod tests {
         buf_writes: &[BufferHandle],
         buf_reads: &[BufferHandle],
     ) -> RecordedPass<'static> {
-        use crate::graph::pass::BufferAccess;
+        use super::super::pass::BufferAccess;
         RecordedPass {
             name,
             reads: vec![],

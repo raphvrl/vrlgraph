@@ -5,13 +5,11 @@ pub mod graph;
 pub mod resource;
 pub mod shader;
 pub mod types;
-pub mod vertex;
 
 pub use ash;
 pub use bytemuck;
 
-pub use shader::{DynShaderType, ShaderType, round_up};
-pub use vertex::{VertexAttribute, VertexInput};
+pub use shader::{DynShaderType, ShaderType, VertexAttribute, VertexInput, round_up};
 pub use vrlgraph_derive::{ShaderType, VertexInput};
 
 pub mod gpu {

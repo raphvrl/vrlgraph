@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use ash::vk;
 
 use crate::resource::{GpuPipeline, Pipeline, ShaderModule};
-use crate::vertex::VertexInput;
+use crate::shader::VertexInput;
 
 #[cfg(debug_assertions)]
 use self::reload::{PipelineDesc, PipelineKind};

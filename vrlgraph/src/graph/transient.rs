@@ -4,7 +4,7 @@ use gpu_allocator::vulkan::Allocator;
 use crate::resource::{ImageDesc, ImageHandle, ResourceError, ResourcePool};
 
 use super::image::{ImageEntry, ImageOrigin};
-use super::pass::RecordedPass;
+use super::schedule::pass::RecordedPass;
 
 fn compute_lifetimes(
     passes: &[RecordedPass<'_>],
@@ -194,9 +194,9 @@ mod tests {
     use ash::vk;
 
     use super::*;
-    use crate::graph::access::LoadOp;
     use crate::graph::image::{Image, ImageEntry};
-    use crate::graph::pass::{PassAccess, RecordedPass};
+    use crate::graph::schedule::access::LoadOp;
+    use crate::graph::schedule::pass::{PassAccess, RecordedPass};
 
     fn img_access(id: u32) -> PassAccess {
         PassAccess {

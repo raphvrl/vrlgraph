@@ -4,23 +4,23 @@ use smallvec::SmallVec;
 
 use crate::resource::BufferHandle;
 
-use super::image::{Image, ImageEntry};
 use super::pass::{BufferAccess, PassAccess};
+use crate::graph::image::{Image, ImageEntry};
 
 #[derive(Clone)]
-pub(super) struct LayerState {
+pub(in crate::graph) struct LayerState {
     pub layout: vk::ImageLayout,
     pub stage: vk::PipelineStageFlags2,
     pub access: vk::AccessFlags2,
 }
 
 #[derive(Clone)]
-pub(super) struct BarrierState {
+pub(in crate::graph) struct BarrierState {
     pub layers: SmallVec<[LayerState; 1]>,
 }
 
 impl BarrierState {
-    pub(super) fn from_entry(e: &ImageEntry) -> Self {
+    pub(in crate::graph) fn from_entry(e: &ImageEntry) -> Self {
         let layer_count = e.layer_count();
         let base = LayerState {
             layout: e.layout,
@@ -32,7 +32,7 @@ impl BarrierState {
         }
     }
 
-    pub(super) fn representative(&self) -> LayerState {
+    pub(in crate::graph) fn representative(&self) -> LayerState {
         let first = &self.layers[0];
         let uniform = self.layers.iter().all(|l| {
             l.layout == first.layout && l.stage == first.stage && l.access == first.access
@@ -64,7 +64,7 @@ impl Default for BufferBarrierState {
     }
 }
 
-pub(super) struct BarrierInfo {
+pub(in crate::graph) struct BarrierInfo {
     pub image: Image,
     pub old_layout: vk::ImageLayout,
     pub new_layout: vk::ImageLayout,
@@ -75,7 +75,7 @@ pub(super) struct BarrierInfo {
     pub layer: Option<u32>,
 }
 
-pub(super) struct BufferBarrierInfo {
+pub(in crate::graph) struct BufferBarrierInfo {
     pub handle: BufferHandle,
     pub src_stage: vk::PipelineStageFlags2,
     pub src_access: vk::AccessFlags2,
@@ -97,7 +97,7 @@ fn needs_layer_barrier(state: &LayerState, next: &PassAccess) -> bool {
         || next.access.intersects(WRITE_ACCESS)
 }
 
-pub(super) fn compute_barriers(
+pub(in crate::graph) fn compute_barriers(
     reads: &[PassAccess],
     writes: &[PassAccess],
     states: &mut [BarrierState],
@@ -181,7 +181,7 @@ pub(super) fn compute_barriers(
     if infos.is_empty() { None } else { Some(infos) }
 }
 
-pub(super) fn compute_buffer_barriers(
+pub(in crate::graph) fn compute_buffer_barriers(
     reads: &[BufferAccess],
     writes: &[BufferAccess],
     states: &mut FxHashMap<BufferHandle, BufferBarrierState>,
@@ -222,9 +222,9 @@ mod tests {
     use rustc_hash::FxHashMap;
 
     use super::*;
-    use crate::graph::access::LoadOp;
+    use super::super::access::LoadOp;
+    use super::super::pass::{BufferAccess, PassAccess};
     use crate::graph::image::Image;
-    use crate::graph::pass::{BufferAccess, PassAccess};
     use crate::resource::BufferHandle;
 
     fn img_state(

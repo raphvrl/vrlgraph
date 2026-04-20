@@ -5,8 +5,8 @@ use ash::vk;
 use crate::resource::{AsyncBuffer, Buffer, BufferHandle, StreamingBuffer};
 
 use super::access::{Access, BufferUsage, LoadOp};
-use super::command::Cmd;
-use super::image::{Image, ImageEntry};
+use crate::graph::cmd::Cmd;
+use crate::graph::image::{Image, ImageEntry};
 
 #[derive(Clone)]
 pub(crate) struct PassAccess {

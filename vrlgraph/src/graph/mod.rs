@@ -4,20 +4,18 @@
 //! call [`Graph::begin_frame`] each frame to obtain a [`FrameBuilder`] on
 //! which passes are declared and submitted with [`FrameBuilder::submit`].
 
-mod access;
-mod barrier;
 mod bindless;
 mod buffer;
 mod builder;
-mod command;
-mod dag;
+mod cmd;
+mod error;
 mod frame;
 mod image;
-mod pass;
 pub(crate) mod pipeline;
 mod query;
 mod resources;
 mod sampler;
+mod schedule;
 mod sync;
 mod transfer;
 mod transient;
@@ -27,76 +25,42 @@ use std::path::PathBuf;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use ash::vk;
-use thiserror::Error;
 
 use self::image::ImageEntry;
-use crate::device::{DeviceError, GpuDevice};
-use crate::resource::{BufferHandle, ImageDesc, ResourceError, ResourcePool};
+use crate::device::GpuDevice;
+use crate::resource::{BufferHandle, ImageDesc, ResourcePool};
 #[cfg(debug_assertions)]
 use crate::resource::{PipelineHandle, ShaderModuleHandle};
-use barrier::BufferBarrierState;
 use bindless::BindlessDescriptorTable;
-use command::{CommandError, CommandPool};
-use pass::RecordedPass;
+use cmd::{CommandError, CommandPool};
 #[cfg(debug_assertions)]
 use pipeline::reload::{PipelineDesc, ShaderWatcher};
 use query::TimestampState;
 use resources::update_bindless;
-use sync::{FrameSync, SyncError};
+use schedule::barrier::BufferBarrierState;
+use schedule::pass::RecordedPass;
+use sync::FrameSync;
 use transfer::TransferManager;
 use transient::TransientCache;
 
 pub use self::buffer::{GpuBufferBuilder, HostBufferBuilder};
 pub use self::image::{Image, TextureBuilder};
 pub use crate::resource::StreamingBuffer;
-pub use access::{Access, BufferUsage, LoadOp};
 pub use bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Sampler, Storage};
 pub use builder::{GpuPreference, GraphBuilder, PresentMode};
-pub use command::Cmd;
+pub use cmd::Cmd;
+pub use error::GraphError;
 pub use frame::{FrameBuilder, PassSetup};
-pub use pass::{
-    ReadParam, WithClearColor, WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
-    WriteParam,
-};
 pub use pipeline::{ComputePipelineBuilder, PipelineBuilder};
 pub use query::PassTiming;
 pub use sampler::SamplerBuilder;
+pub use schedule::access::{Access, BufferUsage, LoadOp};
+pub use schedule::pass::{
+    ReadParam, WithClearColor, WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
+    WriteParam,
+};
 
 use image::ResizableTemplate;
-
-/// Errors returned by graph operations.
-#[derive(Debug, Error)]
-pub enum GraphError {
-    /// A Vulkan device-level error during initialization or swapchain setup.
-    #[error("Device error: {0}")]
-    Device(#[from] DeviceError),
-    /// Frame synchronization failed (semaphore or fence error).
-    #[error("Sync error: {0}")]
-    Sync(#[from] SyncError),
-    /// Command buffer recording or submission failed.
-    #[error("Command error: {0}")]
-    Command(#[from] CommandError),
-    /// GPU resource allocation failed.
-    #[error("Resource error: {0}")]
-    Resource(#[from] ResourceError),
-    /// A raw Vulkan call returned an error code.
-    #[error("Vulkan error: {0}")]
-    Vulkan(#[from] vk::Result),
-    /// A SPIR-V file could not be read or is malformed.
-    #[error("Shader load error: {0}")]
-    ShaderLoad(String),
-    /// The window handle provided to the builder is no longer valid.
-    #[error("Window handle unavailable")]
-    WindowHandle,
-    /// The swapchain is out of date and must be recreated. Call [`Graph::resize`]
-    /// and skip the current frame. This is expected after a window resize.
-    #[error("Swapchain out of date")]
-    SwapchainOutOfDate,
-    /// A dependency cycle was detected in the declared passes. The named pass
-    /// is part of the cycle.
-    #[error("Render pass cycle detected involving pass '{0}'")]
-    PassCycle(&'static str),
-}
 
 #[derive(Default)]
 pub(crate) struct DeferredBindlessFrees {
@@ -355,7 +319,7 @@ impl Graph {
         }
     }
 
-    fn apply_resize(&mut self, width: u32, height: u32) -> Result<bool, GraphError> {
+    pub(in crate::graph) fn apply_resize(&mut self, width: u32, height: u32) -> Result<bool, GraphError> {
         self.device
             .recreate_swapchain((width, height), self.present_mode)
             .map_err(GraphError::from)?;

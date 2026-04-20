@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use crate::resource::BufferHandle;
 
 use super::GraphError;
-use super::command::CommandPool;
+use super::cmd::CommandPool;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TransferId(u64);
