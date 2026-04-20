@@ -4,31 +4,30 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
-use vrlgraph::graph::WithClearColor;
 use vrlgraph::prelude::*;
 use vrlgraph_egui::EguiRenderer;
 
 const OFFSCREEN_SIZE: u32 = 256;
 
 struct State {
-    graph: Graph,
+    graph: gpu::Graph,
     window: Window,
     egui_renderer: EguiRenderer,
     egui_state: egui_winit::State,
-    triangle_pipeline: Pipeline,
-    offscreen_image: Image,
+    triangle_pipeline: gpu::Pipeline,
+    offscreen_image: gpu::Image,
     offscreen_texture_id: egui::TextureId,
 }
 
 impl State {
-    fn new(window: Window) -> Result<Self, GraphError> {
+    fn new(window: Window) -> Result<Self, gpu::GraphError> {
         let size = window.inner_size();
 
-        let mut graph = Graph::builder()
+        let mut graph = gpu::Graph::builder()
             .window(&window)
             .size(size.width, size.height)
             .validation(cfg!(debug_assertions))
-            .present_mode(PresentMode::Fifo)
+            .present_mode(gpu::PresentMode::Fifo)
             .build()?;
 
         let mut egui_renderer = EguiRenderer::new(&mut graph)?;
@@ -76,7 +75,7 @@ impl State {
         })
     }
 
-    fn draw(&mut self) -> Result<(), GraphError> {
+    fn draw(&mut self) -> Result<(), gpu::GraphError> {
         let input = self.egui_state.take_egui_input(&self.window);
         let ppp = self.egui_state.egui_ctx().pixels_per_point();
 
@@ -112,9 +111,9 @@ impl State {
 
         frame
             .render_pass("offscreen_triangle")
-            .write(WithClearColor(
+            .write(gpu::WithClearColor(
                 self.offscreen_image,
-                Access::ColorAttachment,
+                gpu::Access::ColorAttachment,
                 [0.0, 0.0, 0.2, 1.0],
             ))
             .execute(|cmd| {
@@ -125,9 +124,9 @@ impl State {
 
         frame
             .render_pass("clear")
-            .write(WithClearColor(
+            .write(gpu::WithClearColor(
                 backbuffer,
-                Access::ColorAttachment,
+                gpu::Access::ColorAttachment,
                 [0.1, 0.1, 0.1, 1.0],
             ))
             .execute(|_| {});
@@ -176,7 +175,7 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => state.graph.resize(size.width, size.height),
             WindowEvent::RedrawRequested => match state.draw() {
                 Ok(()) => {}
-                Err(GraphError::SwapchainOutOfDate) => {
+                Err(gpu::GraphError::SwapchainOutOfDate) => {
                     let size = state.window.inner_size();
                     state.graph.resize(size.width, size.height);
                 }

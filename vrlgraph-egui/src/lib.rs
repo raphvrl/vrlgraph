@@ -31,13 +31,13 @@ struct PushConstants {
 }
 
 pub struct EguiRenderer {
-    pipeline: Pipeline,
-    sampler: Sampler,
-    textures: FxHashMap<egui::TextureId, Image>,
+    pipeline: gpu::Pipeline,
+    sampler: gpu::Sampler,
+    textures: FxHashMap<egui::TextureId, gpu::Image>,
     pending_frees: VecDeque<Vec<egui::TextureId>>,
     next_user_id: u64,
-    vertex_bufs: Vec<Buffer>,
-    index_bufs: Vec<Buffer>,
+    vertex_bufs: Vec<gpu::Buffer>,
+    index_bufs: Vec<gpu::Buffer>,
     vertex_capacities: Vec<u64>,
     index_capacities: Vec<u64>,
     vertices: Vec<EguiVertex>,
@@ -46,7 +46,7 @@ pub struct EguiRenderer {
 }
 
 impl EguiRenderer {
-    pub fn new(graph: &mut Graph) -> Result<Self, GraphError> {
+    pub fn new(graph: &mut gpu::Graph) -> Result<Self, gpu::GraphError> {
         let vs = graph.shader_module_from_spirv(VERT_SPV, "main")?;
         let fs = graph.shader_module_from_spirv(FRAG_SPV, "main")?;
 
@@ -62,8 +62,8 @@ impl EguiRenderer {
 
         let sampler = graph
             .create_sampler()
-            .filter(Filter::LINEAR)
-            .address_mode(AddressMode::CLAMP_TO_EDGE)
+            .filter(gpu::Filter::LINEAR)
+            .address_mode(gpu::AddressMode::CLAMP_TO_EDGE)
             .build()?;
 
         let n = graph.frames_in_flight();
@@ -71,13 +71,13 @@ impl EguiRenderer {
         let mut vertex_bufs = Vec::with_capacity(n);
         let mut index_bufs = Vec::with_capacity(n);
         for i in 0..n {
-            vertex_bufs.push(graph.create_buffer(&BufferDesc {
+            vertex_bufs.push(graph.create_buffer(&gpu::BufferDesc {
                 size: INITIAL_VERTEX_BYTES,
                 usage: vk::BufferUsageFlags::VERTEX_BUFFER,
                 location: MemoryLocation::CpuToGpu,
                 label: format!("egui_vertices_{i}"),
             })?);
-            index_bufs.push(graph.create_buffer(&BufferDesc {
+            index_bufs.push(graph.create_buffer(&gpu::BufferDesc {
                 size: INITIAL_INDEX_BYTES,
                 usage: vk::BufferUsageFlags::INDEX_BUFFER,
                 location: MemoryLocation::CpuToGpu,
@@ -101,14 +101,14 @@ impl EguiRenderer {
         })
     }
 
-    pub fn register_texture(&mut self, image: Image) -> egui::TextureId {
+    pub fn register_texture(&mut self, image: gpu::Image) -> egui::TextureId {
         let id = egui::TextureId::User(self.next_user_id);
         self.next_user_id += 1;
         self.textures.insert(id, image);
         id
     }
 
-    pub fn update_texture(&mut self, id: egui::TextureId, image: Image) {
+    pub fn update_texture(&mut self, id: egui::TextureId, image: gpu::Image) {
         assert!(matches!(id, egui::TextureId::User(_)));
         assert!(self.textures.contains_key(&id));
         self.textures.insert(id, image);
@@ -123,9 +123,9 @@ impl EguiRenderer {
     /// Process texture uploads and frees. Must be called **before** [`Graph::begin_frame`].
     pub fn prepare(
         &mut self,
-        graph: &mut Graph,
+        graph: &mut gpu::Graph,
         textures_delta: &egui::TexturesDelta,
-    ) -> Result<(), GraphError> {
+    ) -> Result<(), gpu::GraphError> {
         if let Some(to_free) = self.pending_frees.pop_front() {
             for id in to_free {
                 if matches!(id, egui::TextureId::User(_)) {
@@ -150,10 +150,10 @@ impl EguiRenderer {
 
     pub fn paint<'frame>(
         &mut self,
-        frame: &mut FrameBuilder<'frame>,
+        frame: &mut gpu::FrameBuilder<'frame>,
         primitives: &[egui::ClippedPrimitive],
         pixels_per_point: f32,
-    ) -> Result<(), GraphError> {
+    ) -> Result<(), gpu::GraphError> {
         self.tessellate(primitives);
 
         if self.vertices.is_empty() {
@@ -184,7 +184,7 @@ impl EguiRenderer {
         let extent = frame.extent;
         let backbuffer = frame.backbuffer;
 
-        let mut tex_images: Vec<(egui::Rect, Image, u32, u32, i32)> = Vec::new();
+        let mut tex_images: Vec<(egui::Rect, gpu::Image, u32, u32, i32)> = Vec::new();
         for dc in &self.draw_calls {
             if let Some(&image) = self.textures.get(&dc.texture_id) {
                 tex_images.push((
@@ -204,10 +204,10 @@ impl EguiRenderer {
 
         frame
             .render_pass("egui")
-            .write(WithLoadOp(
+            .write(gpu::WithLoadOp(
                 backbuffer,
-                Access::ColorAttachment,
-                LoadOp::Load,
+                gpu::Access::ColorAttachment,
+                gpu::LoadOp::Load,
             ))
             .execute(move |cmd| {
                 cmd.bind_graphics_pipeline(pipeline);
@@ -284,7 +284,7 @@ impl EguiRenderer {
         Ok(())
     }
 
-    pub fn destroy(mut self, graph: &mut Graph) {
+    pub fn destroy(mut self, graph: &mut gpu::Graph) {
         for frees in &mut self.pending_frees {
             for id in frees.drain(..) {
                 if matches!(id, egui::TextureId::User(_)) {
@@ -313,10 +313,10 @@ impl EguiRenderer {
 
     fn apply_texture_delta(
         &mut self,
-        graph: &mut Graph,
+        graph: &mut gpu::Graph,
         id: egui::TextureId,
         delta: &egui::epaint::ImageDelta,
-    ) -> Result<(), GraphError> {
+    ) -> Result<(), gpu::GraphError> {
         let pixels = Self::image_data_to_rgba(&delta.image);
         let [w, h] = delta.image.size();
 
@@ -398,15 +398,15 @@ impl EguiRenderer {
 
     fn ensure_buffer_capacity(
         &mut self,
-        graph: &mut Graph,
+        graph: &mut gpu::Graph,
         fi: usize,
         vertex_bytes: u64,
         index_bytes: u64,
-    ) -> Result<(), GraphError> {
+    ) -> Result<(), gpu::GraphError> {
         if vertex_bytes > self.vertex_capacities[fi] {
             graph.destroy_buffer(self.vertex_bufs[fi]);
             let new_cap = vertex_bytes.next_power_of_two();
-            self.vertex_bufs[fi] = graph.create_buffer(&BufferDesc {
+            self.vertex_bufs[fi] = graph.create_buffer(&gpu::BufferDesc {
                 size: new_cap,
                 usage: vk::BufferUsageFlags::VERTEX_BUFFER,
                 location: MemoryLocation::CpuToGpu,
@@ -418,7 +418,7 @@ impl EguiRenderer {
         if index_bytes > self.index_capacities[fi] {
             graph.destroy_buffer(self.index_bufs[fi]);
             let new_cap = index_bytes.next_power_of_two();
-            self.index_bufs[fi] = graph.create_buffer(&BufferDesc {
+            self.index_bufs[fi] = graph.create_buffer(&gpu::BufferDesc {
                 size: new_cap,
                 usage: vk::BufferUsageFlags::INDEX_BUFFER,
                 location: MemoryLocation::CpuToGpu,

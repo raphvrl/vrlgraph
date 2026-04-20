@@ -49,13 +49,13 @@ const COLORS: [[f32; 4]; 4] = [
 ];
 
 struct State {
-    graph: Graph,
+    graph: gpu::Graph,
     window: Window,
-    pipeline: Pipeline,
-    vertex_buf: Buffer,
-    index_buf: Buffer,
-    transform_buf: Buffer,
-    colors_buf: Buffer,
+    pipeline: gpu::Pipeline,
+    vertex_buf: gpu::Buffer,
+    index_buf: gpu::Buffer,
+    transform_buf: gpu::Buffer,
+    colors_buf: gpu::Buffer,
     start: Instant,
 }
 
@@ -64,14 +64,14 @@ impl common::Example for State {
         Window::default_attributes().with_title("vrlgraph — buffers")
     }
 
-    fn init(window: Window) -> Result<Self, GraphError> {
+    fn init(window: Window) -> Result<Self, gpu::GraphError> {
         let size = window.inner_size();
 
-        let mut graph = Graph::builder()
+        let mut graph = gpu::Graph::builder()
             .window(&window)
             .size(size.width, size.height)
             .validation(cfg!(debug_assertions))
-            .present_mode(PresentMode::Fifo)
+            .present_mode(gpu::PresentMode::Fifo)
             .build()?;
 
         let vertex_buf = graph.vertex_buffer("quad_verts").data(&VERTICES).build()?;
@@ -112,7 +112,7 @@ impl common::Example for State {
         })
     }
 
-    fn draw(&mut self) -> Result<(), GraphError> {
+    fn draw(&mut self) -> Result<(), gpu::GraphError> {
         self.window.request_redraw();
 
         let angle = self.start.elapsed().as_secs_f32();
@@ -134,11 +134,11 @@ impl common::Example for State {
 
         frame
             .render_pass("mesh")
-            .read((self.vertex_buf, BufferUsage::VertexRead))
-            .read((self.index_buf, BufferUsage::IndexRead))
-            .read((self.transform_buf, BufferUsage::UniformRead))
-            .read((self.colors_buf, BufferUsage::StorageRead))
-            .write((backbuffer, Access::ColorAttachment))
+            .read((self.vertex_buf, gpu::BufferUsage::VertexRead))
+            .read((self.index_buf, gpu::BufferUsage::IndexRead))
+            .read((self.transform_buf, gpu::BufferUsage::UniformRead))
+            .read((self.colors_buf, gpu::BufferUsage::StorageRead))
+            .write((backbuffer, gpu::Access::ColorAttachment))
             .execute(|cmd| {
                 cmd.bind_graphics_pipeline(self.pipeline);
                 cmd.set_viewport_scissor(extent);

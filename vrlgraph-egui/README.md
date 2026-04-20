@@ -34,12 +34,11 @@ egui-winit = "0.31"
 ## Quick start
 
 ```rust,ignore
-use vrlgraph::graph::WithClearColor;
 use vrlgraph::prelude::*;
 use vrlgraph_egui::EguiRenderer;
 
 // Initialization
-let mut graph = Graph::builder()
+let mut graph = gpu::Graph::builder()
     .window(&window)
     .size(size.width, size.height)
     .build()?;
@@ -63,19 +62,19 @@ loop {
     // prepare() uploads textures — must be called BEFORE begin_frame
     egui_renderer.prepare(&mut graph, &output.textures_delta)?;
 
-    let frame = graph.begin_frame()?;
+    let mut frame = graph.begin_frame()?;
 
-    graph.render_pass("clear")
-        .write(WithClearColor(
+    frame.render_pass("clear")
+        .write(gpu::WithClearColor(
             frame.backbuffer,
-            Access::ColorAttachment,
+            gpu::Access::ColorAttachment,
             [0.1, 0.1, 0.1, 1.0],
         ))
-        .execute(|_, _| {});
+        .execute(|_| {});
 
-    egui_renderer.paint(&mut graph, &frame, &primitives, ppp)?;
+    egui_renderer.paint(&mut frame, &primitives, ppp)?;
 
-    graph.end_frame(frame)?;
+    frame.submit()?;
 }
 
 // Cleanup
@@ -92,13 +91,13 @@ The sole public type. Owns the graphics pipeline, sampler, texture map, and dyna
 
 | Method | Description |
 |---|---|
-| `new(graph: &mut Graph) -> Result<Self, GraphError>` | Creates the graphics pipeline from embedded SPIR-V shaders, allocates a linear sampler, and provisions initial 64 KB vertex and index buffers. |
-| `register_texture(&mut self, image: Image) -> egui::TextureId` | Registers a vrlgraph `Image` for use in egui widgets. The image must have `SAMPLED` usage. Returns a `TextureId::User` usable with `egui::Image` or `ui.image()`. Ownership stays with the caller. |
-| `update_texture(&mut self, id: egui::TextureId, image: Image)` | Replaces the image behind an existing user texture ID (e.g. after recreating a render target on resize). The old image is not destroyed. |
+| `new(graph: &mut gpu::Graph) -> Result<Self, gpu::GraphError>` | Creates the graphics pipeline from embedded SPIR-V shaders, allocates a linear sampler, and provisions initial 64 KB vertex and index buffers. |
+| `register_texture(&mut self, image: gpu::Image) -> egui::TextureId` | Registers a vrlgraph image for use in egui widgets. The image must have `SAMPLED` usage. Returns a `TextureId::User` usable with `egui::Image` or `ui.image()`. Ownership stays with the caller. |
+| `update_texture(&mut self, id: egui::TextureId, image: gpu::Image)` | Replaces the image behind an existing user texture ID (e.g. after recreating a render target on resize). The old image is not destroyed. |
 | `unregister_texture(&mut self, id: egui::TextureId)` | Removes a user texture mapping. The image is not destroyed. |
-| `prepare(&mut self, graph: &mut Graph, textures_delta: &egui::TexturesDelta) -> Result<(), GraphError>` | Processes texture uploads (full and partial) and deferred frees. Must be called **before** `Graph::begin_frame`. |
-| `paint(&mut self, graph: &mut Graph, frame: &Frame, primitives: &[egui::ClippedPrimitive], pixels_per_point: f32) -> Result<(), GraphError>` | Tessellates primitives into vertices and indices, resizes buffers if needed, and records a render pass with scissor-clipped draw calls. Called between `begin_frame` and `end_frame`. |
-| `destroy(self, graph: &mut Graph)` | Frees all GPU resources (managed textures, buffers, pipeline, sampler). User textures registered via `register_texture` are **not** destroyed — the caller owns them. |
+| `prepare(&mut self, graph: &mut gpu::Graph, textures_delta: &egui::TexturesDelta) -> Result<(), gpu::GraphError>` | Processes texture uploads (full and partial) and deferred frees. Must be called **before** `gpu::Graph::begin_frame`. |
+| `paint(&mut self, frame: &mut gpu::FrameBuilder, primitives: &[egui::ClippedPrimitive], pixels_per_point: f32) -> Result<(), gpu::GraphError>` | Tessellates primitives into vertices and indices, resizes buffers if needed, and records a render pass with scissor-clipped draw calls. Called between `begin_frame` and `submit`. |
+| `destroy(self, graph: &mut gpu::Graph)` | Frees all GPU resources (managed textures, buffers, pipeline, sampler). User textures registered via `register_texture` are **not** destroyed — the caller owns them. |
 
 ---
 
@@ -112,8 +111,8 @@ The per-frame sequence must follow this order:
 4. **`renderer.prepare(&mut graph, &output.textures_delta)`** — upload textures and process frees
 5. `graph.begin_frame()` — acquire the swapchain image
 6. Your own passes (e.g. a clear pass or scene rendering)
-7. **`renderer.paint(&mut graph, &frame, &primitives, ppp)`** — record egui draw commands
-8. `graph.end_frame(frame)` — submit
+7. **`renderer.paint(&mut frame, &primitives, ppp)`** — record egui draw commands
+8. `frame.submit()` — submit
 
 `prepare` must come before `begin_frame` because it issues transfer commands (image uploads) that need to complete before the frame's render passes reference those textures.
 
@@ -147,8 +146,8 @@ let offscreen = graph.persistent_image("offscreen")
 let texture_id = egui_renderer.register_texture(offscreen);
 
 // Render to the offscreen image in your own pass
-graph.render_pass("offscreen")
-    .write(WithClearColor(offscreen, Access::ColorAttachment, [0.0, 0.0, 0.2, 1.0]))
+frame.render_pass("offscreen")
+    .write(gpu::WithClearColor(offscreen, gpu::Access::ColorAttachment, [0.0, 0.0, 0.2, 1.0]))
     .execute(move |cmd| {
         cmd.bind_graphics_pipeline(pipeline);
         cmd.set_viewport_scissor(offscreen_extent);
@@ -210,7 +209,7 @@ The egui pass uses premultiplied alpha blending:
 | `dst_alpha_blend_factor` | `ONE` |
 | `alpha_blend_op` | `ADD` |
 
-The pass writes to the backbuffer with `LoadOp::Load` to preserve whatever was rendered before it.
+The pass writes to the backbuffer with `gpu::LoadOp::Load` to preserve whatever was rendered before it.
 
 ### Clipping
 

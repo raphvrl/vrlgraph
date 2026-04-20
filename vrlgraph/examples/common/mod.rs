@@ -6,8 +6,8 @@ use winit::window::{Window, WindowAttributes, WindowId};
 use vrlgraph::prelude::*;
 
 pub trait Example: Sized {
-    fn init(window: Window) -> Result<Self, GraphError>;
-    fn draw(&mut self) -> Result<(), GraphError>;
+    fn init(window: Window) -> Result<Self, gpu::GraphError>;
+    fn draw(&mut self) -> Result<(), gpu::GraphError>;
     fn resize(&mut self, width: u32, height: u32);
     fn window(&self) -> &Window;
 
@@ -54,7 +54,7 @@ impl<E: Example> ApplicationHandler for App<E> {
             }
             WindowEvent::RedrawRequested => match state.draw() {
                 Ok(()) => {}
-                Err(GraphError::SwapchainOutOfDate) => {
+                Err(gpu::GraphError::SwapchainOutOfDate) => {
                     let size = state.window().inner_size();
                     state.resize(size.width, size.height);
                 }

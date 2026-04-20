@@ -42,10 +42,12 @@ Shaders must be compiled to SPIR-V before being passed to the pipeline builders.
 
 ## Quick start
 
+The prelude exposes the `gpu` module (containing `Graph`, `Buffer`, `Image`, …), the raw Vulkan types via `vk`, and the derive macros `ShaderType` and `VertexInput`. vrlgraph types are accessed through the `gpu::` prefix; Vulkan handles directly through `vk::`.
+
 ```rust,ignore
 use vrlgraph::prelude::*;
 
-let mut graph = Graph::builder()
+let mut graph = gpu::Graph::builder()
     .window(&window)
     .size(1280, 720)
     .build()?;
@@ -62,7 +64,7 @@ let pipeline = graph
 loop {
     let frame = match graph.begin_frame() {
         Ok(f) => f,
-        Err(GraphError::SwapchainOutOfDate) => {
+        Err(gpu::GraphError::SwapchainOutOfDate) => {
             let size = window.inner_size();
             graph.resize(size.width, size.height);
             continue;
@@ -71,7 +73,7 @@ loop {
     };
 
     graph.render_pass("main")
-        .write((frame.backbuffer, Access::ColorAttachment))
+        .write((frame.backbuffer, gpu::Access::ColorAttachment))
         .execute(move |cmd| {
             cmd.bind_graphics_pipeline(pipeline);
             cmd.set_viewport_scissor(frame.extent);
@@ -91,7 +93,7 @@ The central type is `Graph`. It owns the Vulkan device, the swapchain, all GPU r
 ```rust,ignore
 use vrlgraph::prelude::*;
 
-let mut graph = Graph::builder()
+let mut graph = gpu::Graph::builder()
     .window(&window)
     .size(1280, 720)
     .validation(true)
@@ -114,12 +116,12 @@ let frame = graph.begin_frame()?;
 graph.end_frame(frame)?;
 ```
 
-If the swapchain is out of date (e.g. the window was minimized and restored), `begin_frame` returns `GraphError::SwapchainOutOfDate`. The standard response is to call `graph.resize(width, height)` and skip the current frame.
+If the swapchain is out of date (e.g. the window was minimized and restored), `begin_frame` returns `gpu::GraphError::SwapchainOutOfDate`. The standard response is to call `graph.resize(width, height)` and skip the current frame.
 
 ```rust,ignore
 match graph.begin_frame() {
     Ok(frame) => { /* record passes */ }
-    Err(GraphError::SwapchainOutOfDate) => {
+    Err(gpu::GraphError::SwapchainOutOfDate) => {
         let size = window.inner_size();
         graph.resize(size.width, size.height);
     }
@@ -144,9 +146,9 @@ A pass is a named unit of GPU work. You declare it with `render_pass` or `comput
 
 ```rust,ignore
 graph.render_pass("lighting")
-    .read((gbuffer_color,   Access::ShaderRead))
-    .read((gbuffer_normals, Access::ShaderRead))
-    .write((hdr_output,     Access::ColorAttachment))
+    .read((gbuffer_color,   gpu::Access::ShaderRead))
+    .read((gbuffer_normals, gpu::Access::ShaderRead))
+    .write((hdr_output,     gpu::Access::ColorAttachment))
     .execute(|cmd| {
         // record commands
     });
@@ -169,7 +171,7 @@ The graph uses the declared accesses to determine pass order and insert the requ
 
 ```rust,ignore
 graph.render_pass("shadow_map")
-    .write((shadow_atlas, Access::DepthAttachment))
+    .write((shadow_atlas, gpu::Access::DepthAttachment))
     .execute(move |cmd| {
         cmd.bind_graphics_pipeline(shadow_pipeline);
         cmd.set_viewport_scissor(shadow_extent);
@@ -187,8 +189,8 @@ graph.render_pass("shadow_map")
 
 ```rust,ignore
 graph.compute_pass("blur")
-    .read((hdr_output,   Access::ComputeRead))
-    .write((blur_result, Access::ComputeWrite))
+    .read((hdr_output,   gpu::Access::ComputeRead))
+    .write((blur_result, gpu::Access::ComputeWrite))
     .execute(move |cmd| {
         cmd.bind_compute_pipeline(blur_pipeline);
         cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
@@ -197,29 +199,29 @@ graph.compute_pass("blur")
 
 ### Load operations
 
-By default, attachments written with `Access::ColorAttachment` or `Access::DepthAttachment` are cleared at the start of the pass. You can override this with `LoadOp`.
+By default, attachments written with `gpu::Access::ColorAttachment` or `gpu::Access::DepthAttachment` are cleared at the start of the pass. You can override this with `gpu::LoadOp`.
 
 ```rust,ignore
 // Clear the attachment (default)
-.write((target, Access::ColorAttachment))
+.write((target, gpu::Access::ColorAttachment))
 
 // Preserve existing contents, e.g. for accumulation passes
-.write(WithLoadOp(target, Access::ColorAttachment, LoadOp::Load))
+.write(gpu::WithLoadOp(target, gpu::Access::ColorAttachment, gpu::LoadOp::Load))
 
 // Discard — fastest option when you will write every pixel
-.write(WithLoadOp(target, Access::ColorAttachment, LoadOp::DontCare))
+.write(gpu::WithLoadOp(target, gpu::Access::ColorAttachment, gpu::LoadOp::DontCare))
 ```
 
 ### Array image layers
 
-To write a single layer of an array image, use `WithLayer` or `WithLayerLoadOp`.
+To write a single layer of an array image, use `gpu::WithLayer` or `gpu::WithLayerLoadOp`.
 
 ```rust,ignore
 // Write layer 2 of a cubemap face
-.write(WithLayer(cubemap, Access::ColorAttachment, 2))
+.write(gpu::WithLayer(cubemap, gpu::Access::ColorAttachment, 2))
 
 // Write layer 2 with an explicit load op
-.write(WithLayerLoadOp(cubemap, Access::ColorAttachment, LoadOp::Load, 2))
+.write(gpu::WithLayerLoadOp(cubemap, gpu::Access::ColorAttachment, gpu::LoadOp::Load, 2))
 ```
 
 ### Multiview
@@ -228,7 +230,7 @@ For multiview rendering (e.g. VR), call `.multiview(view_mask)` before `.execute
 
 ```rust,ignore
 graph.render_pass("stereo_geometry")
-    .write((stereo_target, Access::ColorAttachment))
+    .write((stereo_target, gpu::Access::ColorAttachment))
     .multiview(0b11) // views 0 and 1
     .execute(move |cmd| { /* ... */ });
 ```
@@ -237,7 +239,7 @@ graph.render_pass("stereo_geometry")
 
 ## Access types
 
-`Access` describes how a pass uses an image. The graph translates each variant to the correct `VkImageLayout`, `VkPipelineStageFlags2`, and `VkAccessFlags2`.
+`gpu::Access` describes how a pass uses an image. The graph translates each variant to the correct `VkImageLayout`, `VkPipelineStageFlags2`, and `VkAccessFlags2`.
 
 | Variant | Typical use |
 |---|---|
@@ -251,7 +253,7 @@ graph.render_pass("stereo_geometry")
 | `TransferSrc` | Source of a copy or blit operation |
 | `TransferDst` | Destination of a copy or blit operation |
 
-`BufferUsage` serves the same purpose for buffers.
+`gpu::BufferUsage` serves the same purpose for buffers.
 
 | Variant | Typical use |
 |---|---|
@@ -472,8 +474,8 @@ Inside a pass, use `try_buffer()` to access an `gpu::AsyncBuffer`. It returns `N
 
 ```rust,ignore
 graph.render_pass("draw_chunks")
-    .read((chunk_vb, BufferUsage::VertexRead))
-    .read((chunk_ib, BufferUsage::IndexRead))
+    .read((chunk_vb, gpu::BufferUsage::VertexRead))
+    .read((chunk_ib, gpu::BufferUsage::IndexRead))
     .execute(move |cmd| {
         let Some(vb) = cmd.try_buffer(chunk_vb) else { return };
         let Some(ib) = cmd.try_buffer(chunk_ib) else { return };
@@ -601,7 +603,7 @@ let pipeline = graph
 Pass a path to `pipeline_cache_path` on the builder to persist the Vulkan pipeline cache to disk. This reduces compilation time on subsequent runs.
 
 ```rust,ignore
-let graph = Graph::builder()
+let graph = gpu::Graph::builder()
     .window(&window)
     .size(1280, 720)
     .pipeline_cache_path("pipeline_cache.bin")
@@ -638,10 +640,10 @@ Images are routed to the correct binding automatically based on `gpu::ImageKind`
 
 ```rust,ignore
 .execute(move |cmd| {
-    let idx: BindlessIndex<Sampled> = cmd.sampled_index(tex2d);   // binding 0
-    let idx: BindlessIndex<Storage> = cmd.storage_index(target);  // binding 1
-    let idx: BindlessIndex<Cubemap> = cmd.cubemap_index(skybox);  // binding 3
-    let idx: BindlessIndex<Array2D> = cmd.array_index(atlas);     // binding 4
+    let idx: gpu::BindlessIndex<gpu::Sampled> = cmd.sampled_index(tex2d);   // binding 0
+    let idx: gpu::BindlessIndex<gpu::Storage> = cmd.storage_index(target);  // binding 1
+    let idx: gpu::BindlessIndex<gpu::Cubemap> = cmd.cubemap_index(skybox);  // binding 3
+    let idx: gpu::BindlessIndex<gpu::Array2D> = cmd.array_index(atlas);     // binding 4
 });
 ```
 
@@ -823,9 +825,9 @@ Samplers use a builder pattern matching the rest of the API. `create_sampler` re
 
 ```rust,ignore
 let sampler = graph.create_sampler()
-    .filter(Filter::LINEAR)
-    .mipmap_mode(MipmapMode::LINEAR)
-    .address_mode(AddressMode::REPEAT)
+    .filter(gpu::Filter::LINEAR)
+    .mipmap_mode(gpu::MipmapMode::LINEAR)
+    .address_mode(gpu::AddressMode::REPEAT)
     .build()?;
 
 // sampler.raw() -> u32, pass to shaders via push constants (binding 2)
@@ -836,14 +838,14 @@ graph.destroy_sampler(sampler);
 
 | Method | Default | Description |
 |---|---|---|
-| `.mag_filter(Filter)` | `LINEAR` | Magnification filter |
-| `.min_filter(Filter)` | `LINEAR` | Minification filter |
-| `.filter(Filter)` | — | Set both mag and min filters |
-| `.mipmap_mode(MipmapMode)` | `LINEAR` | Mipmap filtering mode |
-| `.address_mode_u(AddressMode)` | — | U coordinate wrapping |
-| `.address_mode_v(AddressMode)` | — | V coordinate wrapping |
-| `.address_mode_w(AddressMode)` | — | W coordinate wrapping |
-| `.address_mode(AddressMode)` | — | Set all three address modes |
+| `.mag_filter(gpu::Filter)` | `LINEAR` | Magnification filter |
+| `.min_filter(gpu::Filter)` | `LINEAR` | Minification filter |
+| `.filter(gpu::Filter)` | — | Set both mag and min filters |
+| `.mipmap_mode(gpu::MipmapMode)` | `LINEAR` | Mipmap filtering mode |
+| `.address_mode_u(gpu::AddressMode)` | — | U coordinate wrapping |
+| `.address_mode_v(gpu::AddressMode)` | — | V coordinate wrapping |
+| `.address_mode_w(gpu::AddressMode)` | — | W coordinate wrapping |
+| `.address_mode(gpu::AddressMode)` | — | Set all three address modes |
 | `.anisotropy(f32)` | disabled | Anisotropic filtering max ratio |
 | `.compare_op(CompareOp)` | disabled | Comparison function for shadow maps |
 | `.lod(min, max)` | — | LOD clamp range |
@@ -865,7 +867,7 @@ for timing in graph.pass_timings() {
 }
 ```
 
-`PassTiming` fields:
+`gpu::PassTiming` fields:
 
 | Field | Type | Description |
 |---|---|---|
@@ -883,21 +885,21 @@ for timing in graph.pass_timings() {
 | `.window(&impl HasWindowHandle + HasDisplayHandle)` | yes | — | Window and display handles |
 | `.size(width, height)` | yes | — | Initial swapchain dimensions |
 | `.validation(bool)` | no | `false` | Enable Vulkan validation layers |
-| `.present_mode(PresentMode)` | no | `Fifo` | Presentation mode (see table below) |
-| `.gpu(GpuPreference)` | no | `HighPerformance` | GPU selection hint (see table below) |
+| `.present_mode(gpu::PresentMode)` | no | `Fifo` | Presentation mode (see table below) |
+| `.gpu(gpu::GpuPreference)` | no | `HighPerformance` | GPU selection hint (see table below) |
 | `.frames_in_flight(usize)` | no | `2` | Pipeline depth |
 | `.pipeline_cache_path(impl Into<PathBuf>)` | no | none | Persist pipeline cache to disk |
 | `.srgb(bool)` | no | `true` | Request sRGB swapchain format |
 
 ```rust,ignore
-let graph = Graph::builder()
-    .window(&window)                        // required: window handle
-    .size(1280, 720)                        // required: initial surface size
-    .validation(cfg!(debug_assertions))     // Vulkan validation layers
-    .present_mode(PresentMode::Mailbox)     // presentation mode
-    .gpu(GpuPreference::HighPerformance)    // GPU selection hint
-    .frames_in_flight(2)                    // pipeline depth (default: 2)
-    .pipeline_cache_path("cache.bin")       // persist pipeline cache
+let graph = gpu::Graph::builder()
+    .window(&window)                             // required: window handle
+    .size(1280, 720)                             // required: initial surface size
+    .validation(cfg!(debug_assertions))          // Vulkan validation layers
+    .present_mode(gpu::PresentMode::Mailbox)     // presentation mode
+    .gpu(gpu::GpuPreference::HighPerformance)    // GPU selection hint
+    .frames_in_flight(2)                         // pipeline depth (default: 2)
+    .pipeline_cache_path("cache.bin")            // persist pipeline cache
     .build()?;
 ```
 
@@ -939,13 +941,13 @@ graph.reload_shaders()?;
 
 ## Error handling
 
-All fallible operations return `Result<T, GraphError>`. The main variants you should handle at runtime are:
+All fallible operations return `Result<T, gpu::GraphError>`. The main variants you should handle at runtime are:
 
 | Variant | When it occurs |
 |---|---|
-| `GraphError::SwapchainOutOfDate` | The surface was resized or invalidated |
-| `GraphError::ShaderLoad(msg)` | SPIR-V file not found or invalid |
-| `GraphError::ImageLoad(msg)` | Texture file not found or unsupported format |
-| `GraphError::PassCycle(name)` | A cycle was detected in the pass dependency graph |
+| `gpu::GraphError::SwapchainOutOfDate` | The surface was resized or invalidated |
+| `gpu::GraphError::ShaderLoad(msg)` | SPIR-V file not found or invalid |
+| `gpu::GraphError::ImageLoad(msg)` | Texture file not found or unsupported format |
+| `gpu::GraphError::PassCycle(name)` | A cycle was detected in the pass dependency graph |
 
 All other variants wrap lower-level errors (`DeviceError`, `ResourceError`, Vulkan result codes) and are generally fatal.

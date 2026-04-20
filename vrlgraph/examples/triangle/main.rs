@@ -1,25 +1,24 @@
 #[path = "../common/mod.rs"]
 mod common;
 
-use vrlgraph::graph::WithClearColor;
 use vrlgraph::prelude::*;
 use winit::window::Window;
 
 struct State {
-    graph: Graph,
+    graph: gpu::Graph,
     window: Window,
-    pipeline: Pipeline,
+    pipeline: gpu::Pipeline,
 }
 
 impl common::Example for State {
-    fn init(window: Window) -> Result<Self, GraphError> {
+    fn init(window: Window) -> Result<Self, gpu::GraphError> {
         let size = window.inner_size();
 
-        let mut graph = Graph::builder()
+        let mut graph = gpu::Graph::builder()
             .window(&window)
             .size(size.width, size.height)
             .validation(cfg!(debug_assertions))
-            .present_mode(PresentMode::Mailbox)
+            .present_mode(gpu::PresentMode::Mailbox)
             .build()?;
 
         let vs = graph.shader_module("shaders/triangle.vert.spv", "main")?;
@@ -38,7 +37,7 @@ impl common::Example for State {
         })
     }
 
-    fn draw(&mut self) -> Result<(), GraphError> {
+    fn draw(&mut self) -> Result<(), gpu::GraphError> {
         self.window.request_redraw();
 
         let mut frame = self.graph.begin_frame()?;
@@ -47,9 +46,9 @@ impl common::Example for State {
 
         frame
             .render_pass("triangle")
-            .write(WithClearColor(
+            .write(gpu::WithClearColor(
                 backbuffer,
-                Access::ColorAttachment,
+                gpu::Access::ColorAttachment,
                 [0.1, 0.2, 0.3, 1.0],
             ))
             .execute(|cmd| {

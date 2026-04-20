@@ -1,7 +1,6 @@
 #[path = "../common/mod.rs"]
 mod common;
 
-use vrlgraph::ash::vk;
 use vrlgraph::prelude::*;
 use winit::window::Window;
 
@@ -17,24 +16,24 @@ struct ComposeParams {
 }
 
 struct State {
-    graph: Graph,
+    graph: gpu::Graph,
     window: Window,
-    stereo_pipeline: Pipeline,
-    compose_pipeline: Pipeline,
-    stereo_image: Image,
-    sampler: Sampler,
+    stereo_pipeline: gpu::Pipeline,
+    compose_pipeline: gpu::Pipeline,
+    stereo_image: gpu::Image,
+    sampler: gpu::Sampler,
     start: std::time::Instant,
 }
 
 impl common::Example for State {
-    fn init(window: Window) -> Result<Self, GraphError> {
+    fn init(window: Window) -> Result<Self, gpu::GraphError> {
         let size = window.inner_size();
 
-        let mut graph = Graph::builder()
+        let mut graph = gpu::Graph::builder()
             .window(&window)
             .size(size.width, size.height)
             .validation(cfg!(debug_assertions))
-            .present_mode(PresentMode::Fifo)
+            .present_mode(gpu::PresentMode::Fifo)
             .build()?;
 
         let stereo_image = graph
@@ -47,9 +46,9 @@ impl common::Example for State {
 
         let sampler = graph
             .create_sampler()
-            .filter(Filter::LINEAR)
-            .address_mode_u(AddressMode::CLAMP_TO_EDGE)
-            .address_mode_v(AddressMode::CLAMP_TO_EDGE)
+            .filter(gpu::Filter::LINEAR)
+            .address_mode_u(gpu::AddressMode::CLAMP_TO_EDGE)
+            .address_mode_v(gpu::AddressMode::CLAMP_TO_EDGE)
             .build()?;
 
         let stereo_vs = graph.shader_module("shaders/stereo.vert.spv", "main")?;
@@ -82,7 +81,7 @@ impl common::Example for State {
         })
     }
 
-    fn draw(&mut self) -> Result<(), GraphError> {
+    fn draw(&mut self) -> Result<(), gpu::GraphError> {
         self.window.request_redraw();
 
         let time = self.start.elapsed().as_secs_f32();
@@ -98,7 +97,7 @@ impl common::Example for State {
 
         frame
             .render_pass("stereo_geometry")
-            .write((self.stereo_image, Access::ColorAttachment))
+            .write((self.stereo_image, gpu::Access::ColorAttachment))
             .multiview(0b11)
             .execute(|cmd| {
                 cmd.bind_graphics_pipeline(self.stereo_pipeline);
@@ -109,8 +108,8 @@ impl common::Example for State {
 
         frame
             .render_pass("compose")
-            .read((self.stereo_image, Access::ShaderRead))
-            .write((backbuffer, Access::ColorAttachment))
+            .read((self.stereo_image, gpu::Access::ShaderRead))
+            .write((backbuffer, gpu::Access::ColorAttachment))
             .execute(|cmd| {
                 cmd.bind_graphics_pipeline(self.compose_pipeline);
                 cmd.set_viewport_scissor(extent);

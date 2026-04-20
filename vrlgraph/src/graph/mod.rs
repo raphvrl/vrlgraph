@@ -113,8 +113,8 @@ pub(crate) struct FrameData {
 /// ```rust,no_run
 /// use vrlgraph::prelude::*;
 ///
-/// # fn example(window: &(impl raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle)) -> Result<(), GraphError> {
-/// let mut graph = Graph::builder()
+/// # fn example(window: &(impl raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle)) -> Result<(), gpu::GraphError> {
+/// let mut graph = gpu::Graph::builder()
 ///     .window(window)
 ///     .size(1280, 720)
 ///     .build()?;
@@ -123,7 +123,7 @@ pub(crate) struct FrameData {
 /// let backbuffer = frame.backbuffer;
 ///
 /// frame.render_pass("main")
-///     .write((backbuffer, Access::ColorAttachment))
+///     .write((backbuffer, gpu::Access::ColorAttachment))
 ///     .execute(|cmd| {
 ///         // record commands
 ///     });

@@ -83,9 +83,9 @@ pub trait WriteParam: sealed::Sealed {
 ///
 /// ```rust,no_run
 /// # use vrlgraph::prelude::*;
-/// # fn example(frame: &mut FrameBuilder<'_>, target: Image) {
+/// # fn example(frame: &mut gpu::FrameBuilder<'_>, target: gpu::Image) {
 /// frame.render_pass("accumulate")
-///     .write(WithLoadOp(target, Access::ColorAttachment, LoadOp::Load))
+///     .write(gpu::WithLoadOp(target, gpu::Access::ColorAttachment, gpu::LoadOp::Load))
 ///     .execute(|cmd| { /* ... */ });
 /// # }
 /// ```
@@ -192,11 +192,10 @@ impl WriteParam for WithLayerLoadOp {
 ///
 /// ```rust,no_run
 /// # use vrlgraph::prelude::*;
-/// # use vrlgraph::graph::WithClearColor;
-/// # fn example(frame: &mut FrameBuilder<'_>) {
+/// # fn example(frame: &mut gpu::FrameBuilder<'_>) {
 /// let backbuffer = frame.backbuffer;
 /// frame.render_pass("main")
-///     .write(WithClearColor(backbuffer, Access::ColorAttachment, [0.1, 0.2, 0.3, 1.0]))
+///     .write(gpu::WithClearColor(backbuffer, gpu::Access::ColorAttachment, [0.1, 0.2, 0.3, 1.0]))
 ///     .execute(|cmd| { /* ... */ });
 /// # }
 /// ```
