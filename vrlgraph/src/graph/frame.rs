@@ -7,8 +7,8 @@ use super::command::Cmd;
 use super::dag;
 use super::image::{Image, ImageEntry, ImageOrigin};
 use super::pass::{
-    BufferAccess, FrameResources, PassAccess, PassContext, ReadParam, RecordedPass, WithLayer,
-    WithLayerLoadOp, WithLoadOp, WriteParam,
+    BufferAccess, PassAccess, PassContext, ReadParam, RecordedPass, WithLayer, WithLayerLoadOp,
+    WithLoadOp, WriteParam,
 };
 use super::query::{MAX_TIMESTAMP_PASSES, PassTiming};
 use super::resources::register_bindless;
@@ -76,7 +76,7 @@ impl<'g> PassSetup<'g> {
 
     pub fn execute<F>(self, f: F)
     where
-        F: FnOnce(&mut Cmd, &FrameResources<'_>) + 'static,
+        F: for<'a> FnOnce(&mut Cmd<'a>) + 'static,
     {
         let PassSetup {
             graph,
@@ -287,23 +287,27 @@ impl Graph {
         let mut img_states: Vec<BarrierState> =
             self.images.iter().map(BarrierState::from_entry).collect();
 
+        let acquires = self.transfer.take_completed_acquires();
+        let mip_gens = self.transfer.take_completed_mip_gens();
+        let transfer_timeline_value = acquires
+            .iter()
+            .map(|a| a.timeline_value)
+            .chain(mip_gens.iter().map(|m| m.timeline_value))
+            .max();
+
         let raw = self.frames[self.frame_index].pool.reset_and_begin()?;
-        let mut cmd = Cmd::new(
+        let mut cmd = Cmd::new_frame(
             raw,
             device.clone(),
             self.device.ext_dynamic_state3().clone(),
             self.device.debug_utils().cloned(),
+            &self.images,
+            &self.resources,
+            &self.transfer,
+            self.frame_index,
         );
 
         cmd.bind_global_set(self.bindless.pipeline_layout(), self.bindless.set());
-
-        let acquires = self.transfer.take_completed_acquires();
-        let mip_gens = self.transfer.take_completed_mip_gens();
-        let transfer_timeline_value = if !acquires.is_empty() {
-            self.transfer.max_pending_timeline_value()
-        } else {
-            None
-        };
 
         if !acquires.is_empty() {
             let mut acq_img_barriers: SmallVec<[vk::ImageMemoryBarrier2<'_>; 4]> = SmallVec::new();
@@ -313,7 +317,7 @@ impl Graph {
 
             for a in &acquires {
                 match &a.kind {
-                    AcquireKind::Buffer { raw } => {
+                    AcquireKind::Buffer { raw, size } => {
                         acq_buf_barriers.push(
                             vk::BufferMemoryBarrier2::default()
                                 .src_stage_mask(vk::PipelineStageFlags2::NONE)
@@ -328,7 +332,7 @@ impl Graph {
                                 .dst_queue_family_index(gfx_family)
                                 .buffer(*raw)
                                 .offset(0)
-                                .size(vk::WHOLE_SIZE),
+                                .size(*size),
                         );
                     }
                     AcquireKind::Image {
@@ -563,13 +567,7 @@ impl Graph {
             }
 
             cmd.reset_dynamic_state();
-            let frame_res = FrameResources::new(
-                &self.images,
-                &self.resources,
-                &self.transfer,
-                self.frame_index,
-            );
-            (pass.execute)(&mut cmd, &frame_res);
+            (pass.execute)(&mut cmd);
 
             if is_graphics_pass {
                 cmd.end_rendering();

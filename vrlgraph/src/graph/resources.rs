@@ -178,7 +178,7 @@ impl Graph {
         let device = self.device.ash_device().clone();
         let pool = CommandPool::new(&device, self.device.graphics_family())?;
         let raw_cb = pool.reset_and_begin()?;
-        let cmd = Cmd::new(
+        let cmd = Cmd::new_one_shot(
             raw_cb,
             device.clone(),
             self.device.ext_dynamic_state3().clone(),

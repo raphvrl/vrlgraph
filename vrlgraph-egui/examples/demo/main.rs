@@ -90,7 +90,7 @@ impl State {
                 Access::ColorAttachment,
                 [0.1, 0.1, 0.1, 1.0],
             ))
-            .execute(|_, _| {});
+            .execute(|_| {});
 
         self.egui_renderer
             .paint(&mut self.graph, &frame, &primitives, ppp)?;

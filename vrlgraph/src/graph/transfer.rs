@@ -34,6 +34,7 @@ pub(crate) struct AcquireInfo {
 pub(crate) enum AcquireKind {
     Buffer {
         raw: vk::Buffer,
+        size: vk::DeviceSize,
     },
     Image {
         raw: vk::Image,
@@ -131,7 +132,7 @@ impl TransferManager {
         if self.is_dedicated {
             self.pending_acquires.push(AcquireInfo {
                 timeline_value: self.next_value,
-                kind: AcquireKind::Buffer { raw: dst },
+                kind: AcquireKind::Buffer { raw: dst, size },
             });
         }
 
@@ -453,9 +454,6 @@ impl TransferManager {
         }
     }
 
-    pub fn max_pending_timeline_value(&self) -> Option<u64> {
-        self.pending_acquires.iter().map(|a| a.timeline_value).max()
-    }
 }
 
 impl Drop for TransferManager {

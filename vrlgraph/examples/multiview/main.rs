@@ -101,8 +101,8 @@ impl common::Example for State {
             .render_pass("stereo_geometry")
             .write((stereo_image, Access::ColorAttachment))
             .multiview(0b11)
-            .execute(move |cmd, res| {
-                cmd.bind_graphics_pipeline(res.pipeline(stereo_pipe));
+            .execute(move |cmd| {
+                cmd.bind_graphics_pipeline(stereo_pipe);
                 cmd.set_viewport_scissor(stereo_extent);
                 cmd.push_constants(&StereoParams { time });
                 cmd.draw(3, 1);
@@ -112,12 +112,12 @@ impl common::Example for State {
             .render_pass("compose")
             .read((stereo_image, Access::ShaderRead))
             .write((frame.backbuffer, Access::ColorAttachment))
-            .execute(move |cmd, res| {
-                cmd.bind_graphics_pipeline(res.pipeline(compose_pipe));
+            .execute(move |cmd| {
+                cmd.bind_graphics_pipeline(compose_pipe);
                 cmd.set_viewport_scissor(frame.extent);
                 cmd.push_constants(&ComposeParams {
-                    array_idx: res.array_index(stereo_image),
-                    sampler_idx: res.sampler_index(sampler),
+                    array_idx: cmd.array_index(stereo_image),
+                    sampler_idx: cmd.sampler_index(sampler),
                 });
                 cmd.draw(3, 1);
             });

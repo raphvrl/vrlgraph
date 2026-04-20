@@ -149,8 +149,8 @@ let texture_id = egui_renderer.register_texture(offscreen);
 // Render to the offscreen image in your own pass
 graph.render_pass("offscreen")
     .write(WithClearColor(offscreen, Access::ColorAttachment, [0.0, 0.0, 0.2, 1.0]))
-    .execute(move |cmd, res| {
-        cmd.bind_graphics_pipeline(res.pipeline(pipeline));
+    .execute(move |cmd| {
+        cmd.bind_graphics_pipeline(pipeline);
         cmd.set_viewport_scissor(offscreen_extent);
         cmd.draw(3, 1);
     });

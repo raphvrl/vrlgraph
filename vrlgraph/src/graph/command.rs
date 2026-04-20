@@ -6,7 +6,13 @@ use thiserror::Error;
 
 #[cfg(debug_assertions)]
 use super::pipeline::validate::ReflectedPushConstants;
-use crate::resource::{GpuBuffer, GpuPipeline};
+use super::bindless::Sampler;
+use super::image::{Image, ImageEntry};
+use super::transfer::TransferManager;
+use crate::resource::{
+    AsyncBuffer, Buffer, GpuBuffer, GpuImage, GpuPipeline, Pipeline, ResourcePool,
+    StreamingBufferHandle,
+};
 use crate::types::{ColorWriteMask, CompareOp, CullMode, FrontFace, PolygonMode, Topology};
 #[cfg(debug_assertions)]
 use std::cell::Cell;
@@ -64,22 +70,31 @@ impl Drop for CommandPool {
     }
 }
 
+pub(crate) struct FrameCtx<'a> {
+    pub(crate) images: &'a [ImageEntry],
+    pub(crate) pool: &'a ResourcePool,
+    pub(crate) transfer: &'a TransferManager,
+    pub(crate) frame_index: usize,
+}
+
 /// Command recorder passed to every pass closure.
 ///
 /// `Cmd` wraps a `VkCommandBuffer` and exposes a typed API for binding
-/// pipelines, setting dynamic state, and issuing draw and dispatch commands.
+/// pipelines, setting dynamic state, issuing draw and dispatch commands, and
+/// resolving handles declared in the pass to their underlying GPU objects.
 /// You do not allocate or submit `Cmd` yourself — the graph creates one per
 /// pass and passes it to the closure you provide to [`PassSetup::execute`](crate::graph::PassSetup::execute).
 ///
 /// All rasterizer state (cull mode, depth test, depth clamp, blend, etc.) is dynamic.
 /// Binding a graphics pipeline resets it to sensible defaults (no culling,
 /// no depth test, no depth clamp, no blending). Override the state after binding the pipeline.
-pub struct Cmd {
+pub struct Cmd<'a> {
     raw: vk::CommandBuffer,
     device: ash::Device,
     ext_ds3: ash::ext::extended_dynamic_state3::Device,
 
     debug_utils: Option<ash::ext::debug_utils::Device>,
+    frame: Option<FrameCtx<'a>>,
     bound_layout: Option<vk::PipelineLayout>,
     bound_bind_point: vk::PipelineBindPoint,
     #[cfg(debug_assertions)]
@@ -88,18 +103,28 @@ pub struct Cmd {
     pc_mismatch_warned: Cell<bool>,
 }
 
-impl Cmd {
-    pub fn new(
+impl<'a> Cmd<'a> {
+    pub(crate) fn new_frame(
         raw: vk::CommandBuffer,
         device: ash::Device,
         ext_ds3: ash::ext::extended_dynamic_state3::Device,
         debug_utils: Option<ash::ext::debug_utils::Device>,
+        images: &'a [ImageEntry],
+        pool: &'a ResourcePool,
+        transfer: &'a TransferManager,
+        frame_index: usize,
     ) -> Self {
         Self {
             raw,
             device,
             ext_ds3,
             debug_utils,
+            frame: Some(FrameCtx {
+                images,
+                pool,
+                transfer,
+                frame_index,
+            }),
             bound_layout: None,
             bound_bind_point: vk::PipelineBindPoint::GRAPHICS,
             #[cfg(debug_assertions)]
@@ -107,6 +132,33 @@ impl Cmd {
             #[cfg(debug_assertions)]
             pc_mismatch_warned: Cell::new(false),
         }
+    }
+
+    pub(crate) fn new_one_shot(
+        raw: vk::CommandBuffer,
+        device: ash::Device,
+        ext_ds3: ash::ext::extended_dynamic_state3::Device,
+        debug_utils: Option<ash::ext::debug_utils::Device>,
+    ) -> Cmd<'static> {
+        Cmd {
+            raw,
+            device,
+            ext_ds3,
+            debug_utils,
+            frame: None,
+            bound_layout: None,
+            bound_bind_point: vk::PipelineBindPoint::GRAPHICS,
+            #[cfg(debug_assertions)]
+            reflected_pc: None,
+            #[cfg(debug_assertions)]
+            pc_mismatch_warned: Cell::new(false),
+        }
+    }
+
+    fn frame_ctx(&self) -> &FrameCtx<'a> {
+        self.frame
+            .as_ref()
+            .expect("Cmd: this method requires a frame context (called from a one-shot submit?)")
     }
 
     pub fn begin_rendering(&self, info: &vk::RenderingInfo) {
@@ -120,16 +172,25 @@ impl Cmd {
     /// Binds a graphics pipeline. Dynamic rasterizer state is **not** reset;
     /// values persist across binds (OpenGL-like model). Call
     /// [`reset_dynamic_state`](Cmd::reset_dynamic_state) to restore defaults.
-    pub fn bind_graphics_pipeline(&mut self, pipe: &GpuPipeline) {
+    pub fn bind_graphics_pipeline(&mut self, handle: Pipeline) {
+        let pipe = self
+            .frame_ctx()
+            .pool
+            .get_pipeline(handle.0)
+            .expect("pipeline handle stale — destroyed before frame end");
+        let raw_pipe = pipe.pipeline;
+        let layout = pipe.layout;
+        #[cfg(debug_assertions)]
+        let reflected = pipe.reflected_pc.clone();
         unsafe {
             self.device
-                .cmd_bind_pipeline(self.raw, vk::PipelineBindPoint::GRAPHICS, pipe.pipeline)
+                .cmd_bind_pipeline(self.raw, vk::PipelineBindPoint::GRAPHICS, raw_pipe)
         };
-        self.bound_layout = Some(pipe.layout);
+        self.bound_layout = Some(layout);
         self.bound_bind_point = vk::PipelineBindPoint::GRAPHICS;
         #[cfg(debug_assertions)]
         {
-            self.reflected_pc = pipe.reflected_pc.clone();
+            self.reflected_pc = reflected;
             self.pc_mismatch_warned.set(false);
         }
     }
@@ -166,16 +227,25 @@ impl Cmd {
     }
 
     /// Binds a compute pipeline. Always call this before [`dispatch`](Cmd::dispatch).
-    pub fn bind_compute_pipeline(&mut self, pipe: &GpuPipeline) {
+    pub fn bind_compute_pipeline(&mut self, handle: Pipeline) {
+        let pipe = self
+            .frame_ctx()
+            .pool
+            .get_pipeline(handle.0)
+            .expect("pipeline handle stale — destroyed before frame end");
+        let raw_pipe = pipe.pipeline;
+        let layout = pipe.layout;
+        #[cfg(debug_assertions)]
+        let reflected = pipe.reflected_pc.clone();
         unsafe {
             self.device
-                .cmd_bind_pipeline(self.raw, vk::PipelineBindPoint::COMPUTE, pipe.pipeline)
+                .cmd_bind_pipeline(self.raw, vk::PipelineBindPoint::COMPUTE, raw_pipe)
         };
-        self.bound_layout = Some(pipe.layout);
+        self.bound_layout = Some(layout);
         self.bound_bind_point = vk::PipelineBindPoint::COMPUTE;
         #[cfg(debug_assertions)]
         {
-            self.reflected_pc = pipe.reflected_pc.clone();
+            self.reflected_pc = reflected;
             self.pc_mismatch_warned.set(false);
         }
     }
@@ -297,18 +367,20 @@ impl Cmd {
     }
 
     /// Binds a vertex buffer to slot 0.
-    pub fn bind_vertex_buffer(&self, buffer: &GpuBuffer, offset: vk::DeviceSize) {
+    pub fn bind_vertex_buffer(&self, handle: Buffer, offset: vk::DeviceSize) {
+        let raw_buf = self.buffer(handle).raw;
         unsafe {
             self.device
-                .cmd_bind_vertex_buffers(self.raw, 0, &[buffer.raw], &[offset])
+                .cmd_bind_vertex_buffers(self.raw, 0, &[raw_buf], &[offset])
         };
     }
 
     /// Binds an index buffer. Indices are expected to be `u32`.
-    pub fn bind_index_buffer(&self, buffer: &GpuBuffer, offset: vk::DeviceSize) {
+    pub fn bind_index_buffer(&self, handle: Buffer, offset: vk::DeviceSize) {
+        let raw_buf = self.buffer(handle).raw;
         unsafe {
             self.device
-                .cmd_bind_index_buffer(self.raw, buffer.raw, offset, vk::IndexType::UINT32)
+                .cmd_bind_index_buffer(self.raw, raw_buf, offset, vk::IndexType::UINT32)
         };
     }
 
@@ -375,27 +447,29 @@ impl Cmd {
 
     pub fn draw_indirect(
         &self,
-        buffer: &GpuBuffer,
+        handle: Buffer,
         offset: vk::DeviceSize,
         draw_count: u32,
         stride: u32,
     ) {
+        let raw_buf = self.buffer(handle).raw;
         unsafe {
             self.device
-                .cmd_draw_indirect(self.raw, buffer.raw, offset, draw_count, stride)
+                .cmd_draw_indirect(self.raw, raw_buf, offset, draw_count, stride)
         };
     }
 
     pub fn draw_indexed_indirect(
         &self,
-        buffer: &GpuBuffer,
+        handle: Buffer,
         offset: vk::DeviceSize,
         draw_count: u32,
         stride: u32,
     ) {
+        let raw_buf = self.buffer(handle).raw;
         unsafe {
             self.device
-                .cmd_draw_indexed_indirect(self.raw, buffer.raw, offset, draw_count, stride)
+                .cmd_draw_indexed_indirect(self.raw, raw_buf, offset, draw_count, stride)
         };
     }
 
@@ -411,14 +485,15 @@ impl Cmd {
 
     /// Dispatches a compute workload using arguments read from a buffer at `offset`.
     /// The buffer must contain a `VkDispatchIndirectCommand`.
-    pub fn dispatch_indirect(&self, buffer: &GpuBuffer, offset: vk::DeviceSize) {
+    pub fn dispatch_indirect(&self, handle: Buffer, offset: vk::DeviceSize) {
         debug_assert!(
             self.bound_bind_point == vk::PipelineBindPoint::COMPUTE,
             "Cmd: bind_compute_pipeline() must be called before dispatch_indirect()"
         );
+        let raw_buf = self.buffer(handle).raw;
         unsafe {
             self.device
-                .cmd_dispatch_indirect(self.raw, buffer.raw, offset)
+                .cmd_dispatch_indirect(self.raw, raw_buf, offset)
         };
     }
 
@@ -674,5 +749,138 @@ impl Cmd {
     pub(crate) fn finish(self) -> Result<vk::CommandBuffer, CommandError> {
         unsafe { self.device.end_command_buffer(self.raw)? };
         Ok(self.raw)
+    }
+
+    /// Returns the [`GpuImage`] for a graph image handle.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the image is not allocated or if the handle is stale.
+    pub fn image(&self, handle: Image) -> &GpuImage {
+        let ctx = self.frame_ctx();
+        let entry = &ctx.images[handle.0 as usize];
+        let h = entry
+            .handle
+            .expect("image not allocated — declare it before recording the pass");
+        ctx.pool
+            .get_image(h)
+            .expect("image handle stale — destroyed before frame end")
+    }
+
+    /// Returns the full `VkImageView` for a graph image (all layers, all mips).
+    pub fn image_view(&self, handle: Image) -> vk::ImageView {
+        let ctx = self.frame_ctx();
+        ctx.images[handle.0 as usize].view(ctx.pool)
+    }
+
+    /// Returns a `VkImageView` for a single layer of an array image or cubemap.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `layer` is out of range.
+    pub fn layer_view(&self, handle: Image, layer: u32) -> vk::ImageView {
+        let ctx = self.frame_ctx();
+        let entry = &ctx.images[handle.0 as usize];
+        let h = entry
+            .handle
+            .expect("image not allocated — declare it before recording the pass");
+        let img = ctx
+            .pool
+            .get_image(h)
+            .expect("image handle stale — destroyed before frame end");
+        *img.layer_views
+            .get(layer as usize)
+            .unwrap_or_else(|| panic!("layer {layer} out of range (count: {})", img.layer_count))
+    }
+
+    /// Returns the [`GpuBuffer`] for a synchronous buffer handle.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the handle is stale (buffer was destroyed before the frame ended).
+    pub fn buffer(&self, handle: Buffer) -> &GpuBuffer {
+        self.frame_ctx()
+            .pool
+            .get_buffer(handle.0)
+            .expect("buffer handle stale — destroyed before frame end")
+    }
+
+    /// Returns the [`GpuBuffer`] for an async buffer if its transfer has
+    /// completed, or `None` if the data is still being uploaded.
+    pub fn try_buffer(&self, handle: AsyncBuffer) -> Option<&GpuBuffer> {
+        let ctx = self.frame_ctx();
+        if !ctx.transfer.is_buffer_ready_peek(handle.0) {
+            return None;
+        }
+        ctx.pool.get_buffer(handle.0)
+    }
+
+    /// Returns the [`GpuBuffer`] for the current frame's slot of a streaming buffer.
+    pub fn streaming_buffer(&self, handle: StreamingBufferHandle) -> &GpuBuffer {
+        let ctx = self.frame_ctx();
+        let slot = ctx
+            .pool
+            .streaming_slot(handle, ctx.frame_index)
+            .expect("streaming buffer handle stale — destroyed before frame end");
+        ctx.pool
+            .get_buffer(slot)
+            .expect("streaming buffer slot stale — internal error")
+    }
+
+    /// Returns the [`GpuPipeline`] for a pipeline handle.
+    pub fn pipeline(&self, handle: Pipeline) -> &GpuPipeline {
+        self.frame_ctx()
+            .pool
+            .get_pipeline(handle.0)
+            .expect("pipeline handle stale — destroyed before frame end")
+    }
+
+    /// Returns the bindless sampled image index as a `u32` ready for push constants.
+    ///
+    /// The image must have been created with `SAMPLED` usage (e.g. via
+    /// [`Graph::load_texture`](crate::graph::Graph::load_texture) builder or with
+    /// `ash::vk::ImageUsageFlags::SAMPLED`).
+    pub fn sampled_index(&self, handle: Image) -> u32 {
+        self.frame_ctx().images[handle.0 as usize]
+            .sampled_index
+            .expect("image has no bindless sampled index — was it created with SAMPLED usage?")
+            .raw()
+    }
+
+    /// Returns the bindless storage image index as a `u32` ready for push constants.
+    ///
+    /// The image must have been created with `ash::vk::ImageUsageFlags::STORAGE`.
+    pub fn storage_index(&self, handle: Image) -> u32 {
+        self.frame_ctx().images[handle.0 as usize]
+            .storage_index
+            .expect("image has no bindless storage index — was it created with STORAGE usage?")
+            .raw()
+    }
+
+    /// Returns the bindless cubemap index as a `u32` ready for push constants.
+    ///
+    /// The image must have been created with [`ImageKind::Cubemap`](crate::resource::ImageKind::Cubemap)
+    /// (or `CubemapArray`) and `ash::vk::ImageUsageFlags::SAMPLED`.
+    pub fn cubemap_index(&self, handle: Image) -> u32 {
+        self.frame_ctx().images[handle.0 as usize]
+            .cubemap_index
+            .expect("image has no bindless cubemap index — was it created with Cubemap kind and SAMPLED usage?")
+            .raw()
+    }
+
+    /// Returns the bindless 2D array index as a `u32` ready for push constants.
+    ///
+    /// The image must have been created with [`ImageKind::Image2DArray`](crate::resource::ImageKind::Image2DArray)
+    /// and `ash::vk::ImageUsageFlags::SAMPLED`.
+    pub fn array_index(&self, handle: Image) -> u32 {
+        self.frame_ctx().images[handle.0 as usize]
+            .array_index
+            .expect("image has no bindless array index — was it created with Image2DArray kind and SAMPLED usage?")
+            .raw()
+    }
+
+    /// Returns the bindless sampler index as a `u32` ready for push constants.
+    pub fn sampler_index(&self, sampler: Sampler) -> u32 {
+        sampler.raw()
     }
 }

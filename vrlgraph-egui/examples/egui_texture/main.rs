@@ -118,8 +118,8 @@ impl State {
                 Access::ColorAttachment,
                 [0.0, 0.0, 0.2, 1.0],
             ))
-            .execute(move |cmd, res| {
-                cmd.bind_graphics_pipeline(res.pipeline(pipeline));
+            .execute(move |cmd| {
+                cmd.bind_graphics_pipeline(pipeline);
                 cmd.set_viewport_scissor(offscreen_extent);
                 cmd.draw(3, 1);
             });
@@ -131,7 +131,7 @@ impl State {
                 Access::ColorAttachment,
                 [0.1, 0.1, 0.1, 1.0],
             ))
-            .execute(|_, _| {});
+            .execute(|_| {});
 
         self.egui_renderer
             .paint(&mut self.graph, &frame, &primitives, ppp)?;

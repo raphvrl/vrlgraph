@@ -55,8 +55,8 @@ pub use builder::{GpuPreference, GraphBuilder, PresentMode};
 pub use command::Cmd;
 pub use frame::PassSetup;
 pub use pass::{
-    FrameResources, ReadParam, WithClearColor, WithLayer, WithLayerClearColor, WithLayerLoadOp,
-    WithLoadOp, WriteParam,
+    ReadParam, WithClearColor, WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
+    WriteParam,
 };
 pub use pipeline::{ComputePipelineBuilder, PipelineBuilder};
 pub use query::PassTiming;
@@ -178,7 +178,7 @@ pub(crate) struct FrameData {
 ///
 /// graph.render_pass("main")
 ///     .write((frame.backbuffer, Access::ColorAttachment))
-///     .execute(move |cmd, res| {
+///     .execute(move |cmd| {
 ///         // record commands
 ///     });
 ///

@@ -205,8 +205,8 @@ impl EguiRenderer {
                 Access::ColorAttachment,
                 LoadOp::Load,
             ))
-            .execute(move |cmd, res| {
-                cmd.bind_graphics_pipeline(res.pipeline(pipeline));
+            .execute(move |cmd| {
+                cmd.bind_graphics_pipeline(pipeline);
 
                 let viewport = vk::Viewport {
                     x: 0.0,
@@ -231,10 +231,10 @@ impl EguiRenderer {
                     }],
                 );
 
-                cmd.bind_vertex_buffer(res.buffer(vertex_buf), 0);
-                cmd.bind_index_buffer(res.buffer(index_buf), 0);
+                cmd.bind_vertex_buffer(vertex_buf, 0);
+                cmd.bind_index_buffer(index_buf, 0);
 
-                let sampler_idx = res.sampler_index(sampler);
+                let sampler_idx = cmd.sampler_index(sampler);
                 let max_w = extent.width as f32;
                 let max_h = extent.height as f32;
 
@@ -269,7 +269,7 @@ impl EguiRenderer {
 
                     cmd.push_constants(&PushConstants {
                         screen_size,
-                        texture_index: res.sampled_index(image),
+                        texture_index: cmd.sampled_index(image),
                         sampler_index: sampler_idx,
                     });
 

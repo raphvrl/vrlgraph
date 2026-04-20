@@ -472,7 +472,7 @@ impl<'g> TextureBuilder<'g> {
     }
 
     /// Uploads texture data via the transfer queue without blocking.
-    /// The image data is uploaded asynchronously — use [`FrameResources::try_buffer`]
+    /// The image data is uploaded asynchronously — use [`Cmd::try_buffer`](crate::graph::Cmd::try_buffer)
     /// pattern to check readiness.
     ///
     /// Only supports single-level pixel data (not pre-computed mip_data).

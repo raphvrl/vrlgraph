@@ -26,7 +26,7 @@ pub struct Array2D;
 /// Type-safe index into the global bindless descriptor table.
 ///
 /// The phantom type `K` encodes which binding the index belongs to. Returned
-/// by `FrameResources::sampled_index` and friends as an internal representation;
+/// by `Cmd::sampled_index` and friends as an internal representation;
 /// use those methods directly to get the `u32` for push constants.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BindlessIndex<K>(u32, PhantomData<K>);
@@ -50,7 +50,7 @@ impl<K> From<BindlessIndex<K>> for u32 {
 /// A sampler registered in the global bindless table.
 ///
 /// Returned by [`Graph::create_sampler`](crate::graph::Graph::create_sampler). Pass it to
-/// [`FrameResources::sampler_index`](crate::graph::FrameResources::sampler_index) inside a
+/// [`Cmd::sampler_index`](crate::graph::Cmd::sampler_index) inside a
 /// pass closure to get the `u32` index for push constants. Pass it to
 /// [`Graph::destroy_sampler`](crate::graph::Graph::destroy_sampler) to release it.
 #[derive(Clone, Copy, Debug)]

@@ -88,13 +88,13 @@ impl common::Example for State {
         self.graph
             .compute_pass("fill")
             .write((storage_image, Access::ComputeWrite))
-            .execute(move |cmd, res| {
-                cmd.bind_compute_pipeline(res.pipeline(compute_pipe));
+            .execute(move |cmd| {
+                cmd.bind_compute_pipeline(compute_pipe);
 
                 cmd.push_constants(&FillParams {
                     width,
                     height,
-                    storage_idx: res.storage_index(storage_image),
+                    storage_idx: cmd.storage_index(storage_image),
                 });
 
                 cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
@@ -104,14 +104,14 @@ impl common::Example for State {
             .render_pass("blit")
             .read((storage_image, Access::ShaderRead))
             .write((frame.backbuffer, Access::ColorAttachment))
-            .execute(move |cmd, res| {
-                cmd.bind_graphics_pipeline(res.pipeline(graphics_pipe));
+            .execute(move |cmd| {
+                cmd.bind_graphics_pipeline(graphics_pipe);
 
                 cmd.set_viewport_scissor(frame.extent);
 
                 cmd.push_constants(&BlitParams {
-                    sampled_idx: res.sampled_index(storage_image),
-                    sampler_idx: res.sampler_index(sampler),
+                    sampled_idx: cmd.sampled_index(storage_image),
+                    sampler_idx: cmd.sampler_index(sampler),
                 });
                 cmd.draw(3, 1);
             });

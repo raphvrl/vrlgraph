@@ -18,9 +18,9 @@ pub mod prelude {
 
     pub use crate::graph::{
         Access, Array2D, BindlessIndex, BufferUsage, Cmd, ComputePipelineBuilder, Cubemap, Frame,
-        FrameResources, GpuPreference, Graph, GraphError, Image, LoadOp, PassTiming, PresentMode,
-        Sampled, Sampler, SamplerBuilder, Storage, StreamingBufferHandle, WithClearColor,
-        WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
+        GpuPreference, Graph, GraphError, Image, LoadOp, PassTiming, PresentMode, Sampled, Sampler,
+        SamplerBuilder, Storage, StreamingBufferHandle, WithClearColor, WithLayer,
+        WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
     };
 
     pub use crate::resource::{AsyncBuffer, Buffer, BufferDesc, ImageKind, Pipeline, ShaderModule};

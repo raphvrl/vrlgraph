@@ -141,12 +141,12 @@ impl common::Example for State {
             .read((self.transform_buf, BufferUsage::UniformRead))
             .read((self.colors_buf, BufferUsage::StorageRead))
             .write((frame.backbuffer, Access::ColorAttachment))
-            .execute(move |cmd, res| {
-                cmd.bind_graphics_pipeline(res.pipeline(pipeline));
+            .execute(move |cmd| {
+                cmd.bind_graphics_pipeline(pipeline);
                 cmd.set_viewport_scissor(frame.extent);
 
-                cmd.bind_vertex_buffer(res.buffer(vertex_buf), 0);
-                cmd.bind_index_buffer(res.buffer(index_buf), 0);
+                cmd.bind_vertex_buffer(vertex_buf, 0);
+                cmd.bind_index_buffer(index_buf, 0);
 
                 cmd.push_constants(&PC {
                     transform_addr,

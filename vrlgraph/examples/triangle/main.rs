@@ -54,8 +54,8 @@ impl common::Example for State {
                 Access::ColorAttachment,
                 [0.1, 0.2, 0.3, 1.0],
             ))
-            .execute(move |cmd, res| {
-                cmd.bind_graphics_pipeline(res.pipeline(pipeline));
+            .execute(move |cmd| {
+                cmd.bind_graphics_pipeline(pipeline);
                 cmd.set_viewport_scissor(extent);
                 cmd.draw(3, 1);
             });

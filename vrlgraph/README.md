@@ -72,8 +72,8 @@ loop {
 
     graph.render_pass("main")
         .write((frame.backbuffer, Access::ColorAttachment))
-        .execute(move |cmd, res| {
-            cmd.bind_graphics_pipeline(res.pipeline(pipeline));
+        .execute(move |cmd| {
+            cmd.bind_graphics_pipeline(pipeline);
             cmd.set_viewport_scissor(frame.extent);
             cmd.draw(3, 1);
         });
@@ -147,7 +147,7 @@ graph.render_pass("lighting")
     .read((gbuffer_color,   Access::ShaderRead))
     .read((gbuffer_normals, Access::ShaderRead))
     .write((hdr_output,     Access::ColorAttachment))
-    .execute(|cmd, res| {
+    .execute(|cmd| {
         // record commands
     });
 ```
@@ -161,7 +161,7 @@ The graph uses the declared accesses to determine pass order and insert the requ
 | `.read(impl ReadParam)` | Declare resource read access for this pass |
 | `.write(impl WriteParam)` | Declare resource write access for this pass |
 | `.multiview(u32)` | Enable multiview rendering with the given view mask |
-| `.execute(FnOnce(&mut Cmd, &FrameResources))` | Provide the closure that records GPU commands |
+| `.execute(FnOnce(&mut Cmd))` | Provide the closure that records GPU commands |
 
 ### Render passes
 
@@ -170,13 +170,13 @@ The graph uses the declared accesses to determine pass order and insert the requ
 ```rust,ignore
 graph.render_pass("shadow_map")
     .write((shadow_atlas, Access::DepthAttachment))
-    .execute(move |cmd, res| {
-        cmd.bind_graphics_pipeline(res.pipeline(shadow_pipeline));
+    .execute(move |cmd| {
+        cmd.bind_graphics_pipeline(shadow_pipeline);
         cmd.set_viewport_scissor(shadow_extent);
         cmd.set_depth_bias_enable(true);
         cmd.set_depth_bias(1.25, 0.0, 1.75);
-        cmd.bind_vertex_buffer(res.buffer(vertex_buffer), 0);
-        cmd.bind_index_buffer(res.buffer(index_buffer), 0);
+        cmd.bind_vertex_buffer(vertex_buffer, 0);
+        cmd.bind_index_buffer(index_buffer, 0);
         cmd.draw_indexed(index_count, 1, 0, 0);
     });
 ```
@@ -189,8 +189,8 @@ graph.render_pass("shadow_map")
 graph.compute_pass("blur")
     .read((hdr_output,   Access::ComputeRead))
     .write((blur_result, Access::ComputeWrite))
-    .execute(move |cmd, res| {
-        cmd.bind_compute_pipeline(res.pipeline(blur_pipeline));
+    .execute(move |cmd| {
+        cmd.bind_compute_pipeline(blur_pipeline);
         cmd.dispatch(width.div_ceil(8), height.div_ceil(8), 1);
     });
 ```
@@ -230,7 +230,7 @@ For multiview rendering (e.g. VR), call `.multiview(view_mask)` before `.execute
 graph.render_pass("stereo_geometry")
     .write((stereo_target, Access::ColorAttachment))
     .multiview(0b11) // views 0 and 1
-    .execute(move |cmd, res| { /* ... */ });
+    .execute(move |cmd| { /* ... */ });
 ```
 
 ---
@@ -446,11 +446,11 @@ let per_frame_buf = graph.create_streaming_buffer(
 )?;
 ```
 
-Inside the frame loop, access the current slot through `FrameResources`:
+Inside the frame loop, access the current slot through `Cmd`:
 
 ```rust,ignore
-.execute(move |cmd, res| {
-    let buf = res.streaming_buffer(per_frame_buf);
+.execute(move |cmd| {
+    let buf = cmd.streaming_buffer(per_frame_buf);
     buf.write_slice(std::slice::from_ref(&per_frame_data));
     // bind buf.raw as a uniform buffer
 });
@@ -474,16 +474,16 @@ Inside a pass, use `try_buffer()` to access an `AsyncBuffer`. It returns `None` 
 graph.render_pass("draw_chunks")
     .read((chunk_vb, BufferUsage::VertexRead))
     .read((chunk_ib, BufferUsage::IndexRead))
-    .execute(move |cmd, res| {
-        let Some(vb) = res.try_buffer(chunk_vb) else { return };
-        let Some(ib) = res.try_buffer(chunk_ib) else { return };
-        cmd.bind_vertex_buffer(vb, 0);
-        cmd.bind_index_buffer(ib, 0);
+    .execute(move |cmd| {
+        let Some(vb) = cmd.try_buffer(chunk_vb) else { return };
+        let Some(ib) = cmd.try_buffer(chunk_ib) else { return };
+        // vb / ib are &GpuBuffer — use .raw for low-level bind calls
+        let _ = (vb, ib);
         cmd.draw_indexed(index_count, 1, 0, 0, 0);
     });
 ```
 
-`Buffer` and `AsyncBuffer` cannot be mixed: `res.buffer()` only accepts `Buffer`, and `res.try_buffer()` only accepts `AsyncBuffer`. This prevents accidentally reading an in-flight buffer.
+`Buffer` and `AsyncBuffer` cannot be mixed: `cmd.buffer()` only accepts `Buffer`, and `cmd.try_buffer()` only accepts `AsyncBuffer`. This prevents accidentally reading an in-flight buffer.
 
 To destroy an async buffer, use `destroy_async_buffer()` which waits for any pending transfer to complete before freeing the resource.
 
@@ -618,11 +618,11 @@ vrlgraph uses a single global bindless descriptor set (set 0, `UPDATE_AFTER_BIND
 
 | Binding | Type | Capacity | Accessor |
 |---|---|---|---|
-| 0 | `texture2D textures[]` | 4096 | `res.sampled_index(img)` → `BindlessIndex<Sampled>` |
-| 1 | `image2D storage_images[]` | 1024 | `res.storage_index(img)` → `BindlessIndex<Storage>` |
+| 0 | `texture2D textures[]` | 4096 | `cmd.sampled_index(img)` → `BindlessIndex<Sampled>` |
+| 1 | `image2D storage_images[]` | 1024 | `cmd.storage_index(img)` → `BindlessIndex<Storage>` |
 | 2 | `sampler samplers[]` | 32 | `sampler.index` |
-| 3 | `textureCube cube_textures[]` | 128 | `res.cubemap_index(img)` → `BindlessIndex<Cubemap>` |
-| 4 | `texture2DArray array_textures[]` | 256 | `res.array_index(img)` → `BindlessIndex<Array2D>` |
+| 3 | `textureCube cube_textures[]` | 128 | `cmd.cubemap_index(img)` → `BindlessIndex<Cubemap>` |
+| 4 | `texture2DArray array_textures[]` | 256 | `cmd.array_index(img)` → `BindlessIndex<Array2D>` |
 
 ### Automatic registration
 
@@ -630,18 +630,18 @@ Images are routed to the correct binding automatically based on `ImageKind` and 
 
 | ImageKind | SAMPLED binding |
 |---|---|
-| `Image2D` (default) | 0 — `res.sampled_index()` |
-| `Cubemap` / `CubemapArray` | 3 — `res.cubemap_index()` |
-| `Image2DArray` | 4 — `res.array_index()` |
+| `Image2D` (default) | 0 — `cmd.sampled_index()` |
+| `Cubemap` / `CubemapArray` | 3 — `cmd.cubemap_index()` |
+| `Image2DArray` | 4 — `cmd.array_index()` |
 
 `STORAGE` images always go to binding 1 regardless of kind. On resize, all bindless slots are updated automatically.
 
 ```rust,ignore
-.execute(move |cmd, res| {
-    let idx: BindlessIndex<Sampled> = res.sampled_index(tex2d);   // binding 0
-    let idx: BindlessIndex<Storage> = res.storage_index(target);  // binding 1
-    let idx: BindlessIndex<Cubemap> = res.cubemap_index(skybox);  // binding 3
-    let idx: BindlessIndex<Array2D> = res.array_index(atlas);     // binding 4
+.execute(move |cmd| {
+    let idx: BindlessIndex<Sampled> = cmd.sampled_index(tex2d);   // binding 0
+    let idx: BindlessIndex<Storage> = cmd.storage_index(target);  // binding 1
+    let idx: BindlessIndex<Cubemap> = cmd.cubemap_index(skybox);  // binding 3
+    let idx: BindlessIndex<Array2D> = cmd.array_index(atlas);     // binding 4
 });
 ```
 
@@ -735,11 +735,11 @@ cmd.set_default_blend_state(attachment_count);
 
 ### Vertex and index buffers
 
-Pass the `&GpuBuffer` reference from `FrameResources` directly — no `.raw` unwrapping needed.
+Pass the [`Buffer`] handle directly — the command buffer resolves it internally.
 
 ```rust,ignore
-cmd.bind_vertex_buffer(res.buffer(vertex_buf), 0);
-cmd.bind_index_buffer(res.buffer(index_buf), 0);
+cmd.bind_vertex_buffer(vertex_buf, 0);
+cmd.bind_index_buffer(index_buf, 0);
 ```
 
 ### Push constants

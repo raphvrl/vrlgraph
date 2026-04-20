@@ -22,9 +22,9 @@ pub struct BufferDesc {
 
 /// A GPU-resident buffer.
 ///
-/// Returned by [`FrameResources::buffer`](crate::graph::FrameResources::buffer)
-/// and [`FrameResources::streaming_buffer`](crate::graph::FrameResources::streaming_buffer).
-/// Pass a reference directly to [`Cmd::bind_vertex_buffer`](crate::graph::Cmd::bind_vertex_buffer),
+/// Returned by [`Cmd::buffer`](crate::graph::Cmd::buffer) and
+/// [`Cmd::streaming_buffer`](crate::graph::Cmd::streaming_buffer). Pass [`Buffer`] handles
+/// directly to [`Cmd::bind_vertex_buffer`](crate::graph::Cmd::bind_vertex_buffer),
 /// [`Cmd::bind_index_buffer`](crate::graph::Cmd::bind_index_buffer), and the indirect draw/dispatch
 /// methods. Use `device_address` to pass the buffer as a raw 64-bit GPU pointer via push constants
 /// (requires [`ash::vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS`] at creation time).

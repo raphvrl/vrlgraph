@@ -113,8 +113,8 @@ impl common::Example for State {
                     color,
                     i,
                 ))
-                .execute(move |cmd, res| {
-                    cmd.bind_graphics_pipeline(res.pipeline(fill_pipe));
+                .execute(move |cmd| {
+                    cmd.bind_graphics_pipeline(fill_pipe);
                     cmd.set_viewport_scissor(layer_extent);
                     cmd.push_constants(&FillParams { color, layer: i });
                     cmd.draw(3, 1);
@@ -125,12 +125,12 @@ impl common::Example for State {
             .render_pass("composite")
             .read((array_image, Access::ShaderRead))
             .write((frame.backbuffer, Access::ColorAttachment))
-            .execute(move |cmd, res| {
-                cmd.bind_graphics_pipeline(res.pipeline(composite_pipe));
+            .execute(move |cmd| {
+                cmd.bind_graphics_pipeline(composite_pipe);
                 cmd.set_viewport_scissor(frame.extent);
                 cmd.push_constants(&CompositeParams {
-                    array_idx: res.array_index(array_image),
-                    sampler_idx: res.sampler_index(sampler),
+                    array_idx: cmd.array_index(array_image),
+                    sampler_idx: cmd.sampler_index(sampler),
                 });
                 cmd.draw(3, 1);
             });

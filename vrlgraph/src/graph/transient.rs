@@ -220,7 +220,7 @@ mod tests {
             buffer_reads: vec![],
             buffer_writes: vec![],
             view_mask: 0,
-            execute: Box::new(|_, _| {}),
+            execute: Box::new(|_| {}),
         }
     }
 

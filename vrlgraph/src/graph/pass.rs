@@ -2,16 +2,11 @@
 
 use ash::vk;
 
-use crate::resource::{
-    AsyncBuffer, Buffer, BufferHandle, GpuBuffer, GpuImage, GpuPipeline, Pipeline, ResourcePool,
-    StreamingBufferHandle,
-};
+use crate::resource::{AsyncBuffer, Buffer, BufferHandle, StreamingBufferHandle};
 
 use super::access::{Access, BufferUsage, LoadOp};
-use super::bindless::Sampler;
 use super::command::Cmd;
 use super::image::{Image, ImageEntry};
-use super::transfer::TransferManager;
 
 #[derive(Clone)]
 pub(crate) struct PassAccess {
@@ -54,7 +49,7 @@ pub(crate) struct RecordedPass {
     pub execute: ExecuteFn,
 }
 
-type ExecuteFn = Box<dyn FnOnce(&mut Cmd, &FrameResources<'_>)>;
+type ExecuteFn = Box<dyn for<'a> FnOnce(&mut Cmd<'a>)>;
 
 pub(crate) struct PassContext<'a> {
     pub reads: &'a mut Vec<PassAccess>,
@@ -91,7 +86,7 @@ pub trait WriteParam: sealed::Sealed {
 /// # fn example(graph: &mut Graph, target: Image) {
 /// graph.render_pass("accumulate")
 ///     .write(WithLoadOp(target, Access::ColorAttachment, LoadOp::Load))
-///     .execute(|cmd, res| { /* ... */ });
+///     .execute(|cmd| { /* ... */ });
 /// # }
 /// ```
 pub struct WithLoadOp(pub Image, pub Access, pub LoadOp);
@@ -201,7 +196,7 @@ impl WriteParam for WithLayerLoadOp {
 /// # fn example(graph: &mut Graph, frame: &Frame) {
 /// graph.render_pass("main")
 ///     .write(WithClearColor(frame.backbuffer, Access::ColorAttachment, [0.1, 0.2, 0.3, 1.0]))
-///     .execute(|cmd, res| { /* ... */ });
+///     .execute(|cmd| { /* ... */ });
 /// # }
 /// ```
 pub struct WithClearColor(pub Image, pub Access, pub [f32; 4]);
@@ -290,156 +285,3 @@ impl WriteParam for (StreamingBufferHandle, BufferUsage) {
     }
 }
 
-/// Provides access to GPU resources inside a pass closure.
-///
-/// `FrameResources` is the second argument to the closure passed to
-/// [`PassSetup::execute`](super::frame::PassSetup::execute). Use it to look
-/// up the underlying GPU objects for handles declared in the pass.
-pub struct FrameResources<'a> {
-    pub(crate) images: &'a [ImageEntry],
-    pub(crate) pool: &'a ResourcePool,
-    pub(crate) transfer: &'a TransferManager,
-    pub(crate) frame_index: usize,
-}
-
-impl<'a> FrameResources<'a> {
-    pub(crate) fn new(
-        images: &'a [ImageEntry],
-        pool: &'a ResourcePool,
-        transfer: &'a TransferManager,
-        frame_index: usize,
-    ) -> Self {
-        Self {
-            images,
-            pool,
-            transfer,
-            frame_index,
-        }
-    }
-
-    /// Returns the [`GpuImage`] for a graph image handle.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the image is not allocated or if the handle is stale.
-    pub fn image(&self, handle: Image) -> &GpuImage {
-        let entry = &self.images[handle.0 as usize];
-        let h = entry
-            .handle
-            .expect("image not allocated — declare it before recording the pass");
-        self.pool
-            .get_image(h)
-            .expect("image handle stale — destroyed before frame end")
-    }
-
-    /// Returns the full `VkImageView` for a graph image (all layers, all mips).
-    pub fn image_view(&self, handle: Image) -> vk::ImageView {
-        self.images[handle.0 as usize].view(self.pool)
-    }
-
-    /// Returns a `VkImageView` for a single layer of an array image or cubemap.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `layer` is out of range.
-    pub fn layer_view(&self, handle: Image, layer: u32) -> vk::ImageView {
-        let entry = &self.images[handle.0 as usize];
-        let h = entry
-            .handle
-            .expect("image not allocated — declare it before recording the pass");
-        let img = self
-            .pool
-            .get_image(h)
-            .expect("image handle stale — destroyed before frame end");
-        *img.layer_views
-            .get(layer as usize)
-            .unwrap_or_else(|| panic!("layer {layer} out of range (count: {})", img.layer_count))
-    }
-
-    /// Returns the [`GpuBuffer`] for a synchronous buffer handle.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the handle is stale (buffer was destroyed before the frame ended).
-    pub fn buffer(&self, handle: Buffer) -> &GpuBuffer {
-        self.pool
-            .get_buffer(handle.0)
-            .expect("buffer handle stale — destroyed before frame end")
-    }
-
-    /// Returns the [`GpuBuffer`] for an async buffer if its transfer has
-    /// completed, or `None` if the data is still being uploaded.
-    pub fn try_buffer(&self, handle: AsyncBuffer) -> Option<&GpuBuffer> {
-        if !self.transfer.is_buffer_ready_peek(handle.0) {
-            return None;
-        }
-        self.pool.get_buffer(handle.0)
-    }
-
-    /// Returns the [`GpuBuffer`] for the current frame's slot of a streaming buffer.
-    pub fn streaming_buffer(&self, handle: StreamingBufferHandle) -> &GpuBuffer {
-        let slot = self
-            .pool
-            .streaming_slot(handle, self.frame_index)
-            .expect("streaming buffer handle stale — destroyed before frame end");
-        self.pool
-            .get_buffer(slot)
-            .expect("streaming buffer slot stale — internal error")
-    }
-
-    /// Returns the [`GpuPipeline`] for a pipeline handle.
-    pub fn pipeline(&self, handle: Pipeline) -> &GpuPipeline {
-        self.pool
-            .get_pipeline(handle.0)
-            .expect("pipeline handle stale — destroyed before frame end")
-    }
-
-    /// Returns the bindless sampled image index as a `u32` ready for push constants.
-    ///
-    /// The image must have been created with `SAMPLED` usage (e.g. via
-    /// [`Graph::load_texture`](crate::graph::Graph::load_texture) builder or with
-    /// `ash::vk::ImageUsageFlags::SAMPLED`).
-    pub fn sampled_index(&self, handle: Image) -> u32 {
-        self.images[handle.0 as usize]
-            .sampled_index
-            .expect("image has no bindless sampled index — was it created with SAMPLED usage?")
-            .raw()
-    }
-
-    /// Returns the bindless storage image index as a `u32` ready for push constants.
-    ///
-    /// The image must have been created with `ash::vk::ImageUsageFlags::STORAGE`.
-    pub fn storage_index(&self, handle: Image) -> u32 {
-        self.images[handle.0 as usize]
-            .storage_index
-            .expect("image has no bindless storage index — was it created with STORAGE usage?")
-            .raw()
-    }
-
-    /// Returns the bindless cubemap index as a `u32` ready for push constants.
-    ///
-    /// The image must have been created with [`ImageKind::Cubemap`](crate::resource::ImageKind::Cubemap)
-    /// (or `CubemapArray`) and `ash::vk::ImageUsageFlags::SAMPLED`.
-    pub fn cubemap_index(&self, handle: Image) -> u32 {
-        self.images[handle.0 as usize]
-            .cubemap_index
-            .expect("image has no bindless cubemap index — was it created with Cubemap kind and SAMPLED usage?")
-            .raw()
-    }
-
-    /// Returns the bindless 2D array index as a `u32` ready for push constants.
-    ///
-    /// The image must have been created with [`ImageKind::Image2DArray`](crate::resource::ImageKind::Image2DArray)
-    /// and `ash::vk::ImageUsageFlags::SAMPLED`.
-    pub fn array_index(&self, handle: Image) -> u32 {
-        self.images[handle.0 as usize]
-            .array_index
-            .expect("image has no bindless array index — was it created with Image2DArray kind and SAMPLED usage?")
-            .raw()
-    }
-
-    /// Returns the bindless sampler index as a `u32` ready for push constants.
-    pub fn sampler_index(&self, sampler: Sampler) -> u32 {
-        sampler.raw()
-    }
-}

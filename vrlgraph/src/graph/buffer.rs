@@ -138,8 +138,8 @@ impl<'g> GpuBufferBuilder<'g> {
     }
 
     /// Uploads data to a GPU-only buffer via the transfer queue without blocking.
-    /// Returns an [`AsyncBuffer`] — use [`FrameResources::try_buffer`] in your
-    /// pass to access the data once the transfer completes.
+    /// Returns an [`AsyncBuffer`] — use [`Cmd::try_buffer`](crate::graph::Cmd::try_buffer)
+    /// in your pass to access the data once the transfer completes.
     pub fn build_async(self) -> Result<AsyncBuffer, GraphError> {
         let bytes = self
             .data

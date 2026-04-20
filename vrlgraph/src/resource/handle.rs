@@ -17,7 +17,7 @@ new_key_type! {
 pub struct Buffer(pub(crate) BufferHandle);
 
 /// An opaque handle to a GPU buffer whose data is being uploaded asynchronously.
-/// Use [`FrameResources::try_buffer`](crate::graph::FrameResources::try_buffer)
+/// Use [`Cmd::try_buffer`](crate::graph::Cmd::try_buffer)
 /// to access the underlying buffer — it returns `None` while the transfer is
 /// still in progress.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
