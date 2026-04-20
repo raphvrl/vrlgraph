@@ -2,7 +2,7 @@ use ash::vk;
 use gpu_allocator::MemoryLocation;
 
 use super::{Graph, GraphError};
-use crate::resource::{AsyncBuffer, Buffer, BufferDesc, StreamingBufferHandle};
+use crate::resource::{AsyncBuffer, Buffer, BufferDesc, StreamingBuffer};
 
 pub struct HostBufferBuilder<'g> {
     graph: &'g mut Graph,
@@ -52,7 +52,7 @@ impl<'g> HostBufferBuilder<'g> {
         Ok(buf)
     }
 
-    pub fn streaming(self) -> Result<StreamingBufferHandle, GraphError> {
+    pub fn streaming(self) -> Result<StreamingBuffer, GraphError> {
         let size = self
             .size
             .expect("HostBufferBuilder: call size() or data() before streaming()");
@@ -138,7 +138,7 @@ impl<'g> GpuBufferBuilder<'g> {
     }
 
     /// Uploads data to a GPU-only buffer via the transfer queue without blocking.
-    /// Returns an [`AsyncBuffer`] — use [`Cmd::try_buffer`](crate::graph::Cmd::try_buffer)
+    /// Returns an [`gpu::AsyncBuffer`](crate::gpu::AsyncBuffer) — use [`Cmd::try_buffer`](crate::graph::Cmd::try_buffer)
     /// in your pass to access the data once the transfer completes.
     pub fn build_async(self) -> Result<AsyncBuffer, GraphError> {
         let bytes = self

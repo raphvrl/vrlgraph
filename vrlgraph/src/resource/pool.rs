@@ -10,7 +10,7 @@ use super::handle::{BufferHandle, ImageHandle, PipelineHandle, SamplerHandle, Sh
 use super::image::{GpuImage, ImageDesc};
 use super::pipeline::GpuPipeline;
 use super::shader::GpuShaderModule;
-use super::streaming::{StreamingBuffer, StreamingBufferHandle};
+use super::streaming::{StreamingBuffer, StreamingSlots};
 
 pub(crate) struct ResourcePool {
     buffers: SlotMap<BufferHandle, GpuBuffer>,
@@ -18,7 +18,7 @@ pub(crate) struct ResourcePool {
     pipelines: SlotMap<PipelineHandle, GpuPipeline>,
     samplers: SlotMap<SamplerHandle, vk::Sampler>,
     shader_modules: SlotMap<ShaderModuleHandle, GpuShaderModule>,
-    streaming_buffers: SlotMap<StreamingBufferHandle, StreamingBuffer>,
+    streaming_buffers: SlotMap<StreamingBuffer, StreamingSlots>,
 }
 
 impl ResourcePool {
@@ -68,7 +68,7 @@ impl ResourcePool {
         location: MemoryLocation,
         label: &str,
         frames_in_flight: usize,
-    ) -> Result<StreamingBufferHandle, ResourceError> {
+    ) -> Result<StreamingBuffer, ResourceError> {
         let mut slots: SmallVec<[BufferHandle; 3]> = SmallVec::new();
         for i in 0..frames_in_flight {
             let desc = BufferDesc {
@@ -79,12 +79,12 @@ impl ResourcePool {
             };
             slots.push(self.create_buffer(device, allocator, &desc)?);
         }
-        Ok(self.streaming_buffers.insert(StreamingBuffer::new(slots)))
+        Ok(self.streaming_buffers.insert(StreamingSlots::new(slots)))
     }
 
     pub(crate) fn streaming_slot(
         &self,
-        handle: StreamingBufferHandle,
+        handle: StreamingBuffer,
         frame_index: usize,
     ) -> Option<BufferHandle> {
         self.streaming_buffers
@@ -96,7 +96,7 @@ impl ResourcePool {
         &mut self,
         device: &ash::Device,
         allocator: &mut Allocator,
-        handle: StreamingBufferHandle,
+        handle: StreamingBuffer,
     ) {
         if let Some(sb) = self.streaming_buffers.remove(handle) {
             for slot in sb.slots {

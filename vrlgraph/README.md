@@ -131,7 +131,7 @@ match graph.begin_frame() {
 
 | Field | Type | Description |
 |---|---|---|
-| `backbuffer` | `Image` | The swapchain image for this frame |
+| `backbuffer` | `gpu::Image` | The swapchain image for this frame |
 | `extent` | `vk::Extent2D` | Current surface dimensions |
 | `index` | `u32` | Swapchain image index |
 | `resized` | `bool` | True on the first frame after a resize |
@@ -356,13 +356,13 @@ The label is provided as the first argument to `persistent_image(label)` and `lo
 
 **Important with bindless:** set `SAMPLED` and/or `STORAGE` explicitly in `.usage()` if you need to access the image by bindless index. The graph infers other usage flags (attachment, transfer) from pass accesses, but `SAMPLED`/`STORAGE` must be declared upfront so the bindless slot is allocated at creation time. Transient images are an exception — their usage is inferred from passes before slot allocation.
 
-### ImageKind
+### gpu::ImageKind
 
 ```rust,ignore
-ImageKind::Image2D                        // standard 2D texture
-ImageKind::Image2DArray { layers: 6 }     // array of 2D textures
-ImageKind::Cubemap                        // 6-face cubemap
-ImageKind::CubemapArray { count: 4 }      // array of cubemaps
+gpu::ImageKind::Image2D                        // standard 2D texture
+gpu::ImageKind::Image2DArray { layers: 6 }     // array of 2D textures
+gpu::ImageKind::Cubemap                        // 6-face cubemap
+gpu::ImageKind::CubemapArray { count: 4 }      // array of cubemaps
 ```
 
 ---
@@ -417,15 +417,15 @@ let stream = graph.storage_buffer("per_frame").size(256).streaming()?;
 | `.size(vk::DeviceSize)` | yes* | — | Buffer size in bytes |
 | `.data<T: Pod>(&[T])` | yes* | — | Initial contents (uploaded via transfer queue) |
 | `.dynamic()` | no | `false` | Use CpuToGpu memory instead of GpuOnly (no staging, directly writable) |
-| `.build()` | — | — | Create the buffer (blocks until upload completes), returns `Buffer` |
-| `.build_async()` | — | — | Create the buffer without blocking, returns `AsyncBuffer` |
+| `.build()` | — | — | Create the buffer (blocks until upload completes), returns `gpu::Buffer` |
+| `.build_async()` | — | — | Create the buffer without blocking, returns `gpu::AsyncBuffer` |
 
 \* Exactly one of `.size()` or `.data()` is required.
 
 For cases that need custom usage flags or memory location, `create_buffer` remains available.
 
 ```rust,ignore
-let buf = graph.create_buffer(&BufferDesc {
+let buf = graph.create_buffer(&gpu::BufferDesc {
     size: 1024,
     usage: vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER,
     location: gpu_allocator::MemoryLocation::GpuOnly,
@@ -458,7 +458,7 @@ Inside the frame loop, access the current slot through `Cmd`:
 
 ### Async buffers
 
-`build_async()` uploads buffer data via the transfer queue without blocking the calling thread. It returns an `AsyncBuffer` instead of a `Buffer` — the two are distinct types, enforced at compile time.
+`build_async()` uploads buffer data via the transfer queue without blocking the calling thread. It returns an `gpu::AsyncBuffer` instead of a `gpu::Buffer` — the two are distinct types, enforced at compile time.
 
 A dedicated transfer queue (DMA engine) is used when the GPU exposes one (common on AMD); otherwise the graphics queue is used transparently. The graph discovers the transfer queue automatically at initialization.
 
@@ -468,7 +468,7 @@ let chunk_vb = graph.vertex_buffer("chunk_42").data(&vertices).build_async()?;
 let chunk_ib = graph.index_buffer("chunk_42_idx").data(&indices).build_async()?;
 ```
 
-Inside a pass, use `try_buffer()` to access an `AsyncBuffer`. It returns `None` while the transfer is still in progress:
+Inside a pass, use `try_buffer()` to access an `gpu::AsyncBuffer`. It returns `None` while the transfer is still in progress:
 
 ```rust,ignore
 graph.render_pass("draw_chunks")
@@ -483,7 +483,7 @@ graph.render_pass("draw_chunks")
     });
 ```
 
-`Buffer` and `AsyncBuffer` cannot be mixed: `cmd.buffer()` only accepts `Buffer`, and `cmd.try_buffer()` only accepts `AsyncBuffer`. This prevents accidentally reading an in-flight buffer.
+`gpu::Buffer` and `gpu::AsyncBuffer` cannot be mixed: `cmd.buffer()` only accepts `gpu::Buffer`, and `cmd.try_buffer()` only accepts `gpu::AsyncBuffer`. This prevents accidentally reading an in-flight buffer.
 
 To destroy an async buffer, use `destroy_async_buffer()` which waits for any pending transfer to complete before freeing the resource.
 
@@ -521,8 +521,8 @@ let pipeline = graph
 
 | Method | Required | Default | Description |
 |---|---|---|---|
-| `.vertex_shader(ShaderModule)` | yes | — | Vertex shader module |
-| `.fragment_shader(ShaderModule)` | yes | — | Fragment shader module |
+| `.vertex_shader(gpu::ShaderModule)` | yes | — | Vertex shader module |
+| `.fragment_shader(gpu::ShaderModule)` | yes | — | Fragment shader module |
 | `.color_formats(&[vk::Format])` | no | inferred from pass | Color attachment formats |
 | `.depth_format(vk::Format)` | no | — | Depth attachment format |
 | `.vertex_input::<V: VertexInput>()` | no | — | Vertex layout from derive macro |
@@ -594,7 +594,7 @@ let pipeline = graph
 
 | Method | Required | Description |
 |---|---|---|
-| `.shader(ShaderModule)` | yes | Compute shader module |
+| `.shader(gpu::ShaderModule)` | yes | Compute shader module |
 
 ### Pipeline caching
 
@@ -626,9 +626,9 @@ vrlgraph uses a single global bindless descriptor set (set 0, `UPDATE_AFTER_BIND
 
 ### Automatic registration
 
-Images are routed to the correct binding automatically based on `ImageKind` and `SAMPLED` usage:
+Images are routed to the correct binding automatically based on `gpu::ImageKind` and `SAMPLED` usage:
 
-| ImageKind | SAMPLED binding |
+| gpu::ImageKind | SAMPLED binding |
 |---|---|
 | `Image2D` (default) | 0 — `cmd.sampled_index()` |
 | `Cubemap` / `CubemapArray` | 3 — `cmd.cubemap_index()` |
@@ -672,7 +672,7 @@ void main() {
 
 ### Buffers
 
-Structured buffers are accessed via Buffer Device Address (BDA). The `Buffer` handle carries its device address — retrieve it with `buf.address()` and pass it as a `uint64_t` in the push constants.
+Structured buffers are accessed via Buffer Device Address (BDA). The `gpu::Buffer` handle carries its device address — retrieve it with `buf.address()` and pass it as a `uint64_t` in the push constants.
 
 ```rust,ignore
 let buf = graph.storage_buffer("my_data").data(&data).build()?;
@@ -735,7 +735,7 @@ cmd.set_default_blend_state(attachment_count);
 
 ### Vertex and index buffers
 
-Pass the [`Buffer`] handle directly — the command buffer resolves it internally.
+Pass the `gpu::Buffer` handle directly — the command buffer resolves it internally.
 
 ```rust,ignore
 cmd.bind_vertex_buffer(vertex_buf, 0);
@@ -819,7 +819,7 @@ cmd.insert_debug_label("barrier point", [0.0, 1.0, 0.0, 1.0]);
 
 ## Samplers
 
-Samplers use a builder pattern matching the rest of the API. `create_sampler` returns a `SamplerBuilder` — configure it with method chaining and call `.build()` to get the `Sampler`. The sampler bundles the handle (for `destroy_sampler`) with the bindless index to pass to shaders via push constants.
+Samplers use a builder pattern matching the rest of the API. `create_sampler` returns a `SamplerBuilder` — configure it with method chaining and call `.build()` to get the `gpu::Sampler`. The sampler bundles the handle (for `destroy_sampler`) with the bindless index to pass to shaders via push constants.
 
 ```rust,ignore
 let sampler = graph.create_sampler()

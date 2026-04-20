@@ -11,7 +11,7 @@ use super::image::{Image, ImageEntry};
 use super::transfer::TransferManager;
 use crate::resource::{
     AsyncBuffer, Buffer, GpuBuffer, GpuImage, GpuPipeline, Pipeline, ResourcePool,
-    StreamingBufferHandle,
+    StreamingBuffer,
 };
 use crate::types::{ColorWriteMask, CompareOp, CullMode, FrontFace, PolygonMode, Topology};
 #[cfg(debug_assertions)]
@@ -816,7 +816,7 @@ impl<'a> Cmd<'a> {
     }
 
     /// Returns the [`GpuBuffer`] for the current frame's slot of a streaming buffer.
-    pub fn streaming_buffer(&self, handle: StreamingBufferHandle) -> &GpuBuffer {
+    pub fn streaming_buffer(&self, handle: StreamingBuffer) -> &GpuBuffer {
         let ctx = self.frame_ctx();
         let slot = ctx
             .pool
@@ -859,7 +859,7 @@ impl<'a> Cmd<'a> {
 
     /// Returns the bindless cubemap index as a `u32` ready for push constants.
     ///
-    /// The image must have been created with [`ImageKind::Cubemap`](crate::resource::ImageKind::Cubemap)
+    /// The image must have been created with [`gpu::ImageKind::Cubemap`](crate::gpu::ImageKind::Cubemap)
     /// (or `CubemapArray`) and `ash::vk::ImageUsageFlags::SAMPLED`.
     pub fn cubemap_index(&self, handle: Image) -> u32 {
         self.frame_ctx().images[handle.0 as usize]
@@ -870,7 +870,7 @@ impl<'a> Cmd<'a> {
 
     /// Returns the bindless 2D array index as a `u32` ready for push constants.
     ///
-    /// The image must have been created with [`ImageKind::Image2DArray`](crate::resource::ImageKind::Image2DArray)
+    /// The image must have been created with [`gpu::ImageKind::Image2DArray`](crate::gpu::ImageKind::Image2DArray)
     /// and `ash::vk::ImageUsageFlags::SAMPLED`.
     pub fn array_index(&self, handle: Image) -> u32 {
         self.frame_ctx().images[handle.0 as usize]

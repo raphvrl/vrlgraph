@@ -48,7 +48,7 @@ use transient::TransientCache;
 
 pub use self::buffer::{GpuBufferBuilder, HostBufferBuilder};
 pub use self::image::{Image, TextureBuilder};
-pub use crate::resource::StreamingBufferHandle;
+pub use crate::resource::StreamingBuffer;
 pub use access::{Access, BufferUsage, LoadOp};
 pub use bindless::{Array2D, BindlessIndex, Cubemap, Sampled, Sampler, Storage};
 pub use builder::{GpuPreference, GraphBuilder, PresentMode};

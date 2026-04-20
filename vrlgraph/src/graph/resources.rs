@@ -8,7 +8,7 @@ use super::transfer::TransferId;
 use super::{Graph, GraphError};
 use crate::resource::{
     AsyncBuffer, Buffer, BufferDesc, GpuBuffer, ImageHandle, ImageKind, ResourceError,
-    StreamingBufferHandle,
+    StreamingBuffer,
 };
 
 /// Routes a newly created image view into the correct bindless binding(s) based on
@@ -147,7 +147,7 @@ impl Graph {
         usage: vk::BufferUsageFlags,
         location: MemoryLocation,
         label: &str,
-    ) -> Result<StreamingBufferHandle, ResourceError> {
+    ) -> Result<StreamingBuffer, ResourceError> {
         let frames = self.frames.len();
         let device = self.device.ash_device().clone();
         self.resources.create_streaming_buffer(
@@ -161,7 +161,7 @@ impl Graph {
         )
     }
 
-    pub fn destroy_streaming_buffer(&mut self, handle: StreamingBufferHandle) {
+    pub fn destroy_streaming_buffer(&mut self, handle: StreamingBuffer) {
         let device = self.device.ash_device().clone();
         let frames = self.frames.len();
         for i in 0..frames {

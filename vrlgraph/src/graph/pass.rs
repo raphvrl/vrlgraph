@@ -2,7 +2,7 @@
 
 use ash::vk;
 
-use crate::resource::{AsyncBuffer, Buffer, BufferHandle, StreamingBufferHandle};
+use crate::resource::{AsyncBuffer, Buffer, BufferHandle, StreamingBuffer};
 
 use super::access::{Access, BufferUsage, LoadOp};
 use super::command::Cmd;
@@ -106,7 +106,7 @@ impl sealed::Sealed for WithLayer {}
 impl sealed::Sealed for WithLayerLoadOp {}
 impl sealed::Sealed for (Buffer, BufferUsage) {}
 impl sealed::Sealed for (AsyncBuffer, BufferUsage) {}
-impl sealed::Sealed for (StreamingBufferHandle, BufferUsage) {}
+impl sealed::Sealed for (StreamingBuffer, BufferUsage) {}
 
 fn make_write_access(
     image: Image,
@@ -264,7 +264,7 @@ impl WriteParam for (AsyncBuffer, BufferUsage) {
     }
 }
 
-impl ReadParam for (StreamingBufferHandle, BufferUsage) {
+impl ReadParam for (StreamingBuffer, BufferUsage) {
     fn apply_read(self, ctx: &mut PassContext<'_>) {
         let (handle, usage) = self;
         let slot = ctx
@@ -275,7 +275,7 @@ impl ReadParam for (StreamingBufferHandle, BufferUsage) {
     }
 }
 
-impl WriteParam for (StreamingBufferHandle, BufferUsage) {
+impl WriteParam for (StreamingBuffer, BufferUsage) {
     fn apply_write(self, ctx: &mut PassContext<'_>) {
         let (handle, usage) = self;
         let slot = ctx

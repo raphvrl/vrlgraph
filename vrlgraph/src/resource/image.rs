@@ -70,7 +70,7 @@ pub struct ImageDesc {
     pub mip_levels: u32,
     /// MSAA sample count. Use `SampleCount::S1` for non-multisampled images.
     pub samples: SampleCount,
-    /// Dimensionality and layer structure. Defaults to [`ImageKind::Image2D`].
+    /// Dimensionality and layer structure. Defaults to [`gpu::ImageKind::Image2D`](crate::gpu::ImageKind::Image2D).
     pub kind: ImageKind,
     /// Debug label shown in validation output and GPU debuggers.
     pub label: String,
