@@ -3,9 +3,7 @@ use gpu_allocator::MemoryLocation;
 
 use crate::graph::transfer::TransferId;
 use crate::graph::{Graph, GraphError};
-use crate::resource::{
-    AsyncBuffer, Buffer, BufferDesc, GpuBuffer, ResourceError, StreamingBuffer,
-};
+use crate::resource::{AsyncBuffer, Buffer, BufferDesc, GpuBuffer, ResourceError, StreamingBuffer};
 
 impl Graph {
     pub fn create_buffer(&mut self, desc: &BufferDesc) -> Result<Buffer, ResourceError> {
@@ -133,10 +131,7 @@ impl Graph {
             .get_buffer(staging)
             .expect("buffer just created")
             .raw;
-        let dst_buf = self
-            .resources
-            .get_buffer(dst)
-            .expect("buffer just created");
+        let dst_buf = self.resources.get_buffer(dst).expect("buffer just created");
         let dst_raw = dst_buf.raw;
         let dst_addr = dst_buf.device_address;
 

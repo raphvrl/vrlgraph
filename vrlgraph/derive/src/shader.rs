@@ -258,10 +258,10 @@ fn extract_vec_inner(ty: &Type) -> Option<&Type> {
         if last.ident != "Vec" {
             return None;
         }
-        if let PathArguments::AngleBracketed(args) = &last.arguments {
-            if let Some(GenericArgument::Type(inner)) = args.args.first() {
-                return Some(inner);
-            }
+        if let PathArguments::AngleBracketed(args) = &last.arguments
+            && let Some(GenericArgument::Type(inner)) = args.args.first()
+        {
+            return Some(inner);
         }
     }
     None

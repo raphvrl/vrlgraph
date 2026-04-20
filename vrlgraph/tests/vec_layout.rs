@@ -42,14 +42,18 @@ struct OnlyVec {
 
 #[test]
 fn test_only_vec_size() {
-    let s = OnlyVec { items: vec![1.0, 2.0, 3.0, 4.0] };
+    let s = OnlyVec {
+        items: vec![1.0, 2.0, 3.0, 4.0],
+    };
     assert_eq!(s.padded_size(), 16);
     assert_eq!(s.scalar_align(), 4);
 }
 
 #[test]
 fn test_only_vec_write() {
-    let s = OnlyVec { items: vec![10.0, 20.0] };
+    let s = OnlyVec {
+        items: vec![10.0, 20.0],
+    };
     let mut buf = vec![0u8; s.padded_size()];
     s.write_padded_dyn(&mut buf);
     assert_eq!(read_f32(&buf, 0), 10.0);
@@ -66,7 +70,10 @@ struct LightBuffer {
 
 #[test]
 fn test_light_buffer_empty() {
-    let s = LightBuffer { count: 0, items: vec![] };
+    let s = LightBuffer {
+        count: 0,
+        items: vec![],
+    };
     assert_eq!(s.padded_size(), 4);
 }
 
@@ -106,7 +113,10 @@ struct AlignedVec {
 
 #[test]
 fn test_aligned_vec_offset() {
-    let s = AlignedVec { tag: 0, values: vec![0xDEAD_BEEF_CAFE_BABE] };
+    let s = AlignedVec {
+        tag: 0,
+        values: vec![0xDEAD_BEEF_CAFE_BABE],
+    };
     // tag at 0..4, pad to 8, values at 8..16 → padded_size = 16
     assert_eq!(s.padded_size(), 16);
 
@@ -129,9 +139,9 @@ struct Fixed {
 #[test]
 fn test_fixed_still_works() {
     assert_eq!(Fixed::PADDED_SIZE, 8);
-    let s = Fixed { a: 42, b: 3.14 };
+    let s = Fixed { a: 42, b: 1.5 };
     let mut buf = [0u8; 8];
     s.write_padded(&mut buf);
     assert_eq!(read_u32(&buf, 0), 42);
-    assert_eq!(read_f32(&buf, 4), 3.14);
+    assert_eq!(read_f32(&buf, 4), 1.5);
 }

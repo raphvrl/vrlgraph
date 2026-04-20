@@ -5,10 +5,10 @@ mod staging;
 
 pub(in crate::graph) use bindless_ops::{register_bindless, update_bindless};
 
+use super::Graph;
 use super::bindless::Sampler;
 use super::image::{ImageBuilder, ImageOrigin, TextureBuilder};
 use super::sampler::SamplerBuilder;
-use super::Graph;
 
 impl Graph {
     pub fn transient_image(&mut self) -> ImageBuilder<'_> {

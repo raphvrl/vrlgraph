@@ -89,9 +89,6 @@ impl<'a> Cmd<'a> {
             "Cmd: bind_compute_pipeline() must be called before dispatch_indirect()"
         );
         let raw_buf = self.buffer(handle).raw;
-        unsafe {
-            self.device
-                .cmd_dispatch_indirect(self.raw, raw_buf, offset)
-        };
+        unsafe { self.device.cmd_dispatch_indirect(self.raw, raw_buf, offset) };
     }
 }

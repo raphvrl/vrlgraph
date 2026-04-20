@@ -3,7 +3,9 @@ use ash::vk;
 use super::Cmd;
 use crate::graph::bindless::Sampler;
 use crate::graph::image::Image;
-use crate::resource::{AsyncBuffer, Buffer, GpuBuffer, GpuImage, GpuPipeline, Pipeline, StreamingBuffer};
+use crate::resource::{
+    AsyncBuffer, Buffer, GpuBuffer, GpuImage, GpuPipeline, Pipeline, StreamingBuffer,
+};
 
 impl<'a> Cmd<'a> {
     /// Returns the [`GpuImage`] for a graph image handle.

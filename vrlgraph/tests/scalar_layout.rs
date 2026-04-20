@@ -164,13 +164,13 @@ fn test_bool_in_struct() {
 
     let v = WithBool {
         flag: true,
-        value: 3.14,
+        value: 1.5,
     };
     let mut buf = [0u8; 8];
     v.write_padded(&mut buf);
 
     assert_eq!(read_u32(&buf, 0), 1);
-    assert_eq!(read_f32(&buf, 4), 3.14);
+    assert_eq!(read_f32(&buf, 4), 1.5);
 }
 
 #[derive(ShaderType)]

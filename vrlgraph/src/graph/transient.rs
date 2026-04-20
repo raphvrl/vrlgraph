@@ -233,8 +233,10 @@ mod tests {
     }
 
     fn transient_entry_fmt(format: vk::Format) -> ImageEntry {
-        let mut desc = ImageDesc::default();
-        desc.format = format;
+        let desc = ImageDesc {
+            format,
+            ..ImageDesc::default()
+        };
         ImageEntry::transient(desc)
     }
 

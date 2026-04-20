@@ -10,9 +10,9 @@ use thiserror::Error;
 #[cfg(debug_assertions)]
 use std::cell::Cell;
 
+use super::image::ImageEntry;
 #[cfg(debug_assertions)]
 use super::pipeline::validate::ReflectedPushConstants;
-use super::image::ImageEntry;
 use super::transfer::TransferManager;
 use crate::resource::ResourcePool;
 
@@ -103,6 +103,7 @@ pub struct Cmd<'a> {
 }
 
 impl<'a> Cmd<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_frame(
         raw: vk::CommandBuffer,
         device: ash::Device,

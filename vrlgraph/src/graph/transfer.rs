@@ -453,7 +453,6 @@ impl TransferManager {
             Some(id) => id.0 <= self.last_completed,
         }
     }
-
 }
 
 impl Drop for TransferManager {

@@ -11,14 +11,24 @@ pub trait DynShaderType {
 }
 
 impl<T: ShaderType> DynShaderType for T {
-    fn scalar_align(&self) -> usize { T::SCALAR_ALIGN }
-    fn padded_size(&self) -> usize { T::PADDED_SIZE }
-    fn write_padded_dyn(&self, dst: &mut [u8]) { self.write_padded(dst) }
+    fn scalar_align(&self) -> usize {
+        T::SCALAR_ALIGN
+    }
+    fn padded_size(&self) -> usize {
+        T::PADDED_SIZE
+    }
+    fn write_padded_dyn(&self, dst: &mut [u8]) {
+        self.write_padded(dst)
+    }
 }
 
 impl<T: ShaderType> DynShaderType for Vec<T> {
-    fn scalar_align(&self) -> usize { T::SCALAR_ALIGN }
-    fn padded_size(&self) -> usize { T::PADDED_SIZE * self.len() }
+    fn scalar_align(&self) -> usize {
+        T::SCALAR_ALIGN
+    }
+    fn padded_size(&self) -> usize {
+        T::PADDED_SIZE * self.len()
+    }
     fn write_padded_dyn(&self, dst: &mut [u8]) {
         for (i, elem) in self.iter().enumerate() {
             elem.write_padded(&mut dst[i * T::PADDED_SIZE..]);

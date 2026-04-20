@@ -319,7 +319,11 @@ impl Graph {
         }
     }
 
-    pub(in crate::graph) fn apply_resize(&mut self, width: u32, height: u32) -> Result<bool, GraphError> {
+    pub(in crate::graph) fn apply_resize(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<bool, GraphError> {
         self.device
             .recreate_swapchain((width, height), self.present_mode)
             .map_err(GraphError::from)?;

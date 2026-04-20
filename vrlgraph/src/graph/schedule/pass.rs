@@ -285,4 +285,3 @@ impl WriteParam for (StreamingBuffer, BufferUsage) {
         ctx.buffer_writes.push(BufferAccess::new(slot, usage));
     }
 }
-

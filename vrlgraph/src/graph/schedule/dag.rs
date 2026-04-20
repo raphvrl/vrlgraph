@@ -109,9 +109,9 @@ mod tests {
     use ash::vk;
     use rustc_hash::FxHashSet;
 
-    use super::*;
     use super::super::access::LoadOp;
     use super::super::pass::PassAccess;
+    use super::*;
     use crate::graph::image::Image;
 
     fn img_access(id: u32) -> PassAccess {

@@ -221,9 +221,9 @@ mod tests {
     use ash::vk;
     use rustc_hash::FxHashMap;
 
-    use super::*;
     use super::super::access::LoadOp;
     use super::super::pass::{BufferAccess, PassAccess};
+    use super::*;
     use crate::graph::image::Image;
     use crate::resource::BufferHandle;
 

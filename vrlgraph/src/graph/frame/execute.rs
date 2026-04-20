@@ -3,6 +3,7 @@ use smallvec::SmallVec;
 
 use crate::graph::cmd::Cmd;
 use crate::graph::image::ImageEntry;
+use crate::graph::image::ImageOrigin;
 use crate::graph::query::MAX_TIMESTAMP_PASSES;
 use crate::graph::resources::register_bindless;
 use crate::graph::schedule::access::LoadOp;
@@ -11,7 +12,6 @@ use crate::graph::schedule::dag;
 use crate::graph::schedule::pass::{PassAccess, RecordedPass};
 use crate::graph::transfer::AcquireKind;
 use crate::graph::{Graph, GraphError};
-use crate::graph::image::ImageOrigin;
 use crate::resource::ResourcePool;
 
 impl Graph {
