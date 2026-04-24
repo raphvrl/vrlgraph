@@ -72,7 +72,7 @@ loop {
         Err(e) => return Err(e),
     };
 
-    graph.render_pass("main")
+    frame.render_pass("main")
         .write((frame.backbuffer, gpu::Access::ColorAttachment))
         .execute(move |cmd| {
             cmd.bind_graphics_pipeline(pipeline);
@@ -80,7 +80,7 @@ loop {
             cmd.draw(3, 1);
         });
 
-    graph.end_frame(frame)?;
+    frame.submit()?;
 }
 ```
 
@@ -104,23 +104,23 @@ let mut graph = gpu::Graph::builder()
 
 ## Frame loop
 
-Each frame starts with `begin_frame` and ends with `end_frame`. Between those two calls you declare your passes. Nothing executes until `end_frame` is called, at which point the graph submits all recorded work in dependency order.
+Each frame starts with `begin_frame` and ends with `frame.submit()`. Between those two calls you declare your passes on the `FrameBuilder`. Nothing executes until `submit` is called, at which point the graph submits all recorded work in dependency order.
 
-`begin_frame` returns a `Frame` that gives you the current backbuffer handle, the swapchain extent, the frame index, and a flag indicating whether the window was just resized.
+`begin_frame` returns a `FrameBuilder` that gives you the current backbuffer handle, the swapchain extent, the frame index, and a flag indicating whether the window was just resized.
 
 ```rust,ignore
-let frame = graph.begin_frame()?;
+let mut frame = graph.begin_frame()?;
 
 // declare passes here
 
-graph.end_frame(frame)?;
+frame.submit()?;
 ```
 
 If the swapchain is out of date (e.g. the window was minimized and restored), `begin_frame` returns `gpu::GraphError::SwapchainOutOfDate`. The standard response is to call `graph.resize(width, height)` and skip the current frame.
 
 ```rust,ignore
 match graph.begin_frame() {
-    Ok(frame) => { /* record passes */ }
+    Ok(mut frame) => { /* record passes, then frame.submit()? */ }
     Err(gpu::GraphError::SwapchainOutOfDate) => {
         let size = window.inner_size();
         graph.resize(size.width, size.height);
@@ -129,7 +129,7 @@ match graph.begin_frame() {
 }
 ```
 
-### Frame fields
+### FrameBuilder fields
 
 | Field | Type | Description |
 |---|---|---|
@@ -145,7 +145,7 @@ match graph.begin_frame() {
 A pass is a named unit of GPU work. You declare it with `render_pass` or `compute_pass`, describe its image and buffer accesses, and record its commands in a closure.
 
 ```rust,ignore
-graph.render_pass("lighting")
+frame.render_pass("lighting")
     .read((gbuffer_color,   gpu::Access::ShaderRead))
     .read((gbuffer_normals, gpu::Access::ShaderRead))
     .write((hdr_output,     gpu::Access::ColorAttachment))
@@ -170,7 +170,7 @@ The graph uses the declared accesses to determine pass order and insert the requ
 `render_pass` is for fragment shader work. A pass that writes a color or depth attachment will have dynamic rendering (`VK_KHR_dynamic_rendering`) set up automatically for the images it writes.
 
 ```rust,ignore
-graph.render_pass("shadow_map")
+frame.render_pass("shadow_map")
     .write((shadow_atlas, gpu::Access::DepthAttachment))
     .execute(move |cmd| {
         cmd.bind_graphics_pipeline(shadow_pipeline);
@@ -188,7 +188,7 @@ graph.render_pass("shadow_map")
 `compute_pass` is for compute shader work. Dynamic rendering is not started for compute passes.
 
 ```rust,ignore
-graph.compute_pass("blur")
+frame.compute_pass("blur")
     .read((hdr_output,   gpu::Access::ComputeRead))
     .write((blur_result, gpu::Access::ComputeWrite))
     .execute(move |cmd| {
@@ -229,7 +229,7 @@ To write a single layer of an array image, use `gpu::WithLayer` or `gpu::WithLay
 For multiview rendering (e.g. VR), call `.multiview(view_mask)` before `.execute`.
 
 ```rust,ignore
-graph.render_pass("stereo_geometry")
+frame.render_pass("stereo_geometry")
     .write((stereo_target, gpu::Access::ColorAttachment))
     .multiview(0b11) // views 0 and 1
     .execute(move |cmd| { /* ... */ });
@@ -484,7 +484,7 @@ graph.render_pass("draw_chunks")
         let Some(ib) = cmd.try_buffer(chunk_ib) else { return };
         // vb / ib are &GpuBuffer — use .raw for low-level bind calls
         let _ = (vb, ib);
-        cmd.draw_indexed(index_count, 1, 0, 0, 0);
+        cmd.draw_indexed(index_count, 1, 0, 0);
     });
 ```
 
@@ -625,7 +625,7 @@ vrlgraph uses a single global bindless descriptor set (set 0, `UPDATE_AFTER_BIND
 |---|---|---|---|
 | 0 | `texture2D textures[]` | 4096 | `cmd.sampled_index(img)` → `BindlessIndex<Sampled>` |
 | 1 | `image2D storage_images[]` | 1024 | `cmd.storage_index(img)` → `BindlessIndex<Storage>` |
-| 2 | `sampler samplers[]` | 32 | `sampler.index` |
+| 2 | `sampler samplers[]` | 32 | `sampler.raw()` |
 | 3 | `textureCube cube_textures[]` | 128 | `cmd.cubemap_index(img)` → `BindlessIndex<Cubemap>` |
 | 4 | `texture2DArray array_textures[]` | 256 | `cmd.array_index(img)` → `BindlessIndex<Array2D>` |
 
@@ -708,8 +708,8 @@ The `Cmd` type is the command recorder passed to every pass closure. It wraps th
 ### Pipelines and state
 
 ```rust,ignore
-cmd.bind_graphics_pipeline(res.pipeline(pipeline));
-cmd.bind_compute_pipeline(res.pipeline(compute_pipeline));
+cmd.bind_graphics_pipeline(pipeline);
+cmd.bind_compute_pipeline(compute_pipeline);
 
 cmd.set_viewport_scissor(frame.extent);
 cmd.set_viewport(vk::Viewport { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0, min_depth: 0.0, max_depth: 1.0 });
@@ -801,11 +801,11 @@ For unsupported types, use the `#[align(N)]` attribute on the field to specify a
 ```rust,ignore
 cmd.draw(vertex_count, instance_count);
 cmd.draw_indexed(index_count, instance_count, first_index, vertex_offset);
-cmd.draw_indirect(res.buffer(indirect_buf), 0, draw_count, stride);
-cmd.draw_indexed_indirect(res.buffer(indirect_buf), 0, draw_count, stride);
+cmd.draw_indirect(indirect_buf, 0, draw_count, stride);
+cmd.draw_indexed_indirect(indirect_buf, 0, draw_count, stride);
 
 cmd.dispatch(groups_x, groups_y, groups_z);
-cmd.dispatch_indirect(res.buffer(indirect_buf), 0);
+cmd.dispatch_indirect(indirect_buf, 0);
 ```
 
 ### Debug markers
@@ -860,10 +860,10 @@ graph.destroy_sampler(sampler);
 
 ## Pass timing
 
-The graph inserts GPU timestamp queries around each pass. After `end_frame` returns, `pass_timings` gives you the GPU execution time of every pass in the previous frame.
+The graph inserts GPU timestamp queries around each pass. After `frame.submit()` returns, `pass_timings` gives you the GPU execution time of every pass in the previous frame.
 
 ```rust,ignore
-graph.end_frame(frame)?;
+frame.submit()?;
 
 for timing in graph.pass_timings() {
     println!("{}: {:.2} us", timing.name, timing.gpu_ns as f64 / 1000.0);
