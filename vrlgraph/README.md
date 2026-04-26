@@ -494,6 +494,73 @@ To destroy an async buffer, use `destroy_async_buffer()` which waits for any pen
 
 ---
 
+## Readback (GPU → CPU)
+
+Both images and buffers can be copied back to CPU-visible memory at the end of a frame. The graph inserts an implicit transfer pass after the resource's last write; the staging buffer is owned by the returned handle and freed automatically once the GPU has released it.
+
+### Image readback (screenshots, exports)
+
+`frame.readback_image(image)` returns an `gpu::ImageReadback` handle. Call `wait(&graph)` after `submit()` to block until the data is ready.
+
+```rust,ignore
+let mut frame = graph.begin_frame()?;
+let bb = frame.backbuffer;
+
+frame.render_pass("scene")
+    .write((bb, gpu::Access::ColorAttachment))
+    .execute(|cmd| { /* draw */ });
+
+let shot = frame.readback_image(bb)?;
+frame.submit()?;
+
+let data = shot.wait(&graph);
+// data.bytes is `row_pitch * height` long — pack rows if you need
+// a tightly-packed `width * height * bpp` buffer for image-crate consumers.
+```
+
+Supported formats are color formats with a fixed bytes-per-pixel (`R8G8B8A8_*`, `B8G8R8A8_*`, `R16G16B16A16_*`, `R32_SFLOAT`, etc.). Depth, stencil, planar, and block-compressed formats return `gpu::GraphError::UnsupportedReadbackFormat`.
+
+`row_pitch` may exceed `width * bpp` because Vulkan rounds rows up to `optimalBufferCopyRowPitchAlignment`. Iterate per-row with the reported pitch; do not assume tight packing.
+
+### Buffer readback (compute results, GPU-side counters)
+
+`frame.readback_buffer(buf)` returns an `gpu::BufferReadback`. Use `wait` for raw bytes or `wait_as::<T>` for a typed view via `bytemuck`.
+
+```rust,ignore
+frame.compute_pass("histogram")
+    .write((histogram, gpu::BufferUsage::StorageWrite))
+    .execute(move |cmd| {
+        cmd.bind_compute_pipeline(pipeline);
+        cmd.dispatch(groups, 1, 1);
+    });
+
+let bins = frame.readback_buffer(histogram);
+frame.submit()?;
+
+let counts: &[u32] = bins.wait_as::<u32>(&graph);
+```
+
+`readback_buffer` works on any `gpu::Buffer` that has `vk::BufferUsageFlags::TRANSFER_SRC` set. The `storage_buffer`, `uniform_buffer`, `vertex_buffer`, and `index_buffer` builders include it automatically; buffers created via `create_buffer` need it declared explicitly.
+
+### Handles
+
+| Method | Description |
+|---|---|
+| `is_ready()` | Non-blocking poll. `true` once the GPU has finished. |
+| `try_get()` | Returns the data view if ready, `None` otherwise. |
+| `wait(&graph)` | Blocks until the frame's GPU work completes, returns the view. |
+| `try_get_as::<T>()` / `wait_as::<T>()` | Buffer only — typed view via `bytemuck`. |
+
+Handles are cheap to clone (`Arc` internally). The staging buffer is freed automatically `frames_in_flight` cycles after the last clone is dropped.
+
+### Latency
+
+Readbacks are sequenced inside the frame's command buffer, so the result becomes available after the frame's `in_flight_fence` signals — typically `frames_in_flight` frames after `submit()`. For one-shot screenshots this is a few milliseconds; for periodic capture, plan the latency in.
+
+See `examples/screenshot/main.rs` (image → PNG) and `examples/compute_readback/main.rs` (SSBO with typed readback).
+
+---
+
 ## Pipelines
 
 ### Graphics pipelines
@@ -952,5 +1019,6 @@ All fallible operations return `Result<T, gpu::GraphError>`. The main variants y
 | `gpu::GraphError::ShaderLoad(msg)` | SPIR-V file not found or invalid |
 | `gpu::GraphError::ImageLoad(msg)` | Texture file not found or unsupported format |
 | `gpu::GraphError::PassCycle(name)` | A cycle was detected in the pass dependency graph |
+| `gpu::GraphError::UnsupportedReadbackFormat(fmt)` | `readback_image` was called on a depth, stencil, planar, or compressed format |
 
 All other variants wrap lower-level errors (`DeviceError`, `ResourceError`, Vulkan result codes) and are generally fatal.

@@ -20,6 +20,36 @@ impl<'a> Cmd<'a> {
         };
     }
 
+    pub(crate) fn copy_image_to_buffer_region(
+        &self,
+        image: vk::Image,
+        buffer: vk::Buffer,
+        regions: &[vk::BufferImageCopy],
+    ) {
+        unsafe {
+            self.device.cmd_copy_image_to_buffer(
+                self.raw,
+                image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                buffer,
+                regions,
+            )
+        };
+    }
+
+    pub(crate) fn copy_buffer_region(
+        &self,
+        src: vk::Buffer,
+        dst: vk::Buffer,
+        size: vk::DeviceSize,
+    ) {
+        let region = vk::BufferCopy::default()
+            .src_offset(0)
+            .dst_offset(0)
+            .size(size);
+        unsafe { self.device.cmd_copy_buffer(self.raw, src, dst, &[region]) };
+    }
+
     pub(crate) fn pipeline_barrier2(&self, image_barriers: &[vk::ImageMemoryBarrier2]) {
         let dep_info = vk::DependencyInfo::default().image_memory_barriers(image_barriers);
         unsafe { self.device.cmd_pipeline_barrier2(self.raw, &dep_info) };

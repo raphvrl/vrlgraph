@@ -14,11 +14,11 @@ pub use vrlgraph_derive::{ShaderType, VertexInput};
 
 pub mod gpu {
     pub use crate::graph::{
-        Access, Array2D, BindlessIndex, BufferUsage, Cmd, ComputePipelineBuilder, Cubemap,
-        FrameBuilder, GpuBufferBuilder, GpuPreference, Graph, GraphError, HostBufferBuilder, Image,
-        LoadOp, PassTiming, PresentMode, Sampled, Sampler, SamplerBuilder, Storage,
-        StreamingBuffer, TextureBuilder, WithClearColor, WithLayer, WithLayerClearColor,
-        WithLayerLoadOp, WithLoadOp,
+        Access, Array2D, BindlessIndex, BufferReadback, BufferUsage, Cmd, ComputePipelineBuilder,
+        Cubemap, FrameBuilder, GpuBufferBuilder, GpuPreference, Graph, GraphError,
+        HostBufferBuilder, Image, ImageReadback, ImageReadbackData, LoadOp, PassTiming,
+        PresentMode, Sampled, Sampler, SamplerBuilder, Storage, StreamingBuffer, TextureBuilder,
+        WithClearColor, WithLayer, WithLayerClearColor, WithLayerLoadOp, WithLoadOp,
     };
     pub use crate::resource::{AsyncBuffer, Buffer, BufferDesc, ImageKind, Pipeline, ShaderModule};
     pub use crate::shader::DynShaderType;

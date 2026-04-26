@@ -155,7 +155,9 @@ impl<'g> ImageBuilder<'g> {
                 let entry = &mut self.graph.images[idx];
                 if !entry.usage.is_empty() {
                     let device = self.graph.device.ash_device().clone();
-                    let usage = entry.usage | vk::ImageUsageFlags::TRANSFER_DST;
+                    let usage = entry.usage
+                        | vk::ImageUsageFlags::TRANSFER_DST
+                        | vk::ImageUsageFlags::TRANSFER_SRC;
                     let handle = self.graph.resources.create_image(
                         &device,
                         self.graph.device.allocator_mut(),

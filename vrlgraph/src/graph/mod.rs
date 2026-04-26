@@ -13,6 +13,7 @@ mod frame;
 mod image;
 pub(crate) mod pipeline;
 mod query;
+mod readback;
 mod resources;
 mod sampler;
 mod schedule;
@@ -21,6 +22,7 @@ mod transfer;
 mod transient;
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -36,6 +38,7 @@ use cmd::{CommandError, CommandPool};
 #[cfg(debug_assertions)]
 use pipeline::reload::{PipelineDesc, ShaderWatcher};
 use query::TimestampState;
+use readback::DeferredReadbackFree;
 use resources::update_bindless;
 use schedule::barrier::BufferBarrierState;
 use schedule::pass::RecordedPass;
@@ -53,6 +56,7 @@ pub use error::GraphError;
 pub use frame::{FrameBuilder, PassSetup};
 pub use pipeline::{ComputePipelineBuilder, PipelineBuilder};
 pub use query::PassTiming;
+pub use readback::{BufferReadback, ImageReadback, ImageReadbackData};
 pub use sampler::SamplerBuilder;
 pub use schedule::access::{Access, BufferUsage, LoadOp};
 pub use schedule::pass::{
@@ -153,6 +157,7 @@ pub struct Graph {
     pub(crate) sc_graph_image: Option<Image>,
     pub(crate) pending_resize: Option<(u32, u32)>,
     pub(crate) transfer: TransferManager,
+    pub(crate) readback_free_queue: Arc<Mutex<Vec<DeferredReadbackFree>>>,
     pub(crate) spirv_module_cache: FxHashMap<PathBuf, vk::ShaderModule>,
     #[cfg(debug_assertions)]
     pub(crate) pipeline_descs: FxHashMap<PipelineHandle, PipelineDesc>,
@@ -237,6 +242,7 @@ impl Graph {
             pipeline_cache,
             pipeline_cache_path,
             transfer,
+            readback_free_queue: Arc::new(Mutex::new(Vec::new())),
             transient_cache: TransientCache::new(),
             timestamps,
             frame_active: false,
@@ -366,7 +372,9 @@ impl Graph {
             entry.access = vk::AccessFlags2::NONE;
 
             if !saved_usage.is_empty() {
-                let usage = saved_usage | vk::ImageUsageFlags::TRANSFER_DST;
+                let usage = saved_usage
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::TRANSFER_SRC;
                 let handle = self.resources.create_image(
                     &device,
                     self.device.allocator_mut(),
@@ -404,6 +412,32 @@ impl Graph {
         }
 
         live
+    }
+
+    pub(in crate::graph) fn drain_readback_frees(&mut self) {
+        let queue = Arc::clone(&self.readback_free_queue);
+        let device = self.device.ash_device().clone();
+        let mut q = match queue.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if q.is_empty() {
+            return;
+        }
+        let mut keep = Vec::with_capacity(q.len());
+        for entry in q.drain(..) {
+            if entry.cycles_remaining == 0 {
+                self.resources
+                    .destroy_buffer(&device, self.device.allocator_mut(), entry.buffer);
+                self.buffer_states.remove(&entry.buffer);
+            } else {
+                keep.push(DeferredReadbackFree {
+                    buffer: entry.buffer,
+                    cycles_remaining: entry.cycles_remaining - 1,
+                });
+            }
+        }
+        *q = keep;
     }
 
     pub(in crate::graph) fn cleanup_frame(&mut self) {

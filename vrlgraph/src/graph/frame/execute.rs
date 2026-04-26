@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ash::vk;
 use smallvec::SmallVec;
 
@@ -5,6 +7,7 @@ use crate::graph::cmd::Cmd;
 use crate::graph::image::ImageEntry;
 use crate::graph::image::ImageOrigin;
 use crate::graph::query::MAX_TIMESTAMP_PASSES;
+use crate::graph::readback::ReadbackInner;
 use crate::graph::resources::register_bindless;
 use crate::graph::schedule::access::LoadOp;
 use crate::graph::schedule::barrier::{BarrierState, compute_barriers, compute_buffer_barriers};
@@ -18,6 +21,7 @@ impl Graph {
     pub(crate) fn execute_frame(
         &mut self,
         pending: Vec<RecordedPass<'_>>,
+        readbacks: Vec<Arc<ReadbackInner>>,
     ) -> Result<(), GraphError> {
         let live_images = self.collect_live_images(&pending);
         let passes = dag::sort_and_cull_passes(pending, &live_images)
@@ -27,7 +31,9 @@ impl Graph {
 
         for entry in &mut self.images[..self.persistent_count] {
             if entry.handle.is_none() && entry.external.is_none() {
-                let usage = entry.usage | vk::ImageUsageFlags::TRANSFER_DST;
+                let usage = entry.usage
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::TRANSFER_SRC;
                 let handle = self.resources.create_image(
                     &device,
                     self.device.allocator_mut(),
@@ -442,6 +448,13 @@ impl Graph {
                 &[submit_info],
                 self.sync.in_flight_fence(fi),
             )?;
+        }
+
+        if !readbacks.is_empty() {
+            let fence = self.sync.in_flight_fence(fi);
+            for inner in &readbacks {
+                let _ = inner.fence.set(fence);
+            }
         }
 
         let signal_semaphores = [render_finished];

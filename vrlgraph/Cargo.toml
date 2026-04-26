@@ -37,6 +37,7 @@ vrlgraph-derive = { path = "derive" }
 winit = "0.30.13"
 tracing-subscriber = "0.3.23"
 glam = "0.32.1"
+image = { version = "0.25", default-features = false, features = ["png"] }
 vrlgraph = { path = ".", features = ["glam"] }
 
 [[example]]
@@ -59,3 +60,11 @@ path = "examples/array_layers/main.rs"
 [[example]]
 name = "multiview"
 path = "examples/multiview/main.rs"
+
+[[example]]
+name = "screenshot"
+path = "examples/screenshot/main.rs"
+
+[[example]]
+name = "compute_readback"
+path = "examples/compute_readback/main.rs"

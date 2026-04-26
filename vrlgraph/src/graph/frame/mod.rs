@@ -1,12 +1,16 @@
 mod begin;
 mod execute;
 mod pass_setup;
+mod readback_setup;
 
 pub use pass_setup::PassSetup;
+
+use std::sync::Arc;
 
 use ash::vk;
 
 use super::image::{Image, ImageBuilder, ImageOrigin};
+use super::readback::ReadbackInner;
 use super::schedule::pass::RecordedPass;
 use super::{Graph, GraphError};
 
@@ -28,6 +32,7 @@ pub struct FrameBuilder<'frame> {
     /// `true` on the first frame after the window was resized.
     pub resized: bool,
     pub(crate) pending_passes: Vec<RecordedPass<'frame>>,
+    pub(crate) pending_readbacks: Vec<Arc<ReadbackInner>>,
 }
 
 impl<'frame> FrameBuilder<'frame> {
@@ -74,7 +79,8 @@ impl<'frame> FrameBuilder<'frame> {
     /// Submits all declared passes to the GPU and presents the frame.
     pub fn submit(mut self) -> Result<(), GraphError> {
         let pending = std::mem::take(&mut self.pending_passes);
-        match self.graph.execute_frame(pending) {
+        let readbacks = std::mem::take(&mut self.pending_readbacks);
+        match self.graph.execute_frame(pending, readbacks) {
             Ok(()) => {
                 self.graph.frame_active = false;
                 std::mem::forget(self);

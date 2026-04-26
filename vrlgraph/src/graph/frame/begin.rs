@@ -31,6 +31,7 @@ impl Graph {
                 .cleanup_staging(&mut self.resources, &device, alloc);
         }
 
+        self.drain_readback_frees();
         self.cleanup_frame();
 
         self.timestamps.last_timings.clear();
@@ -107,6 +108,7 @@ impl Graph {
             index: idx as u32,
             resized,
             pending_passes: Vec::new(),
+            pending_readbacks: Vec::new(),
         })
     }
 }

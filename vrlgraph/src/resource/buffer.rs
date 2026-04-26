@@ -111,6 +111,14 @@ impl GpuBuffer {
         self.allocation.mapped_ptr().map(|p| p.as_ptr() as *mut u8)
     }
 
+    pub(crate) fn memory(&self) -> vk::DeviceMemory {
+        unsafe { self.allocation.memory() }
+    }
+
+    pub(crate) fn memory_offset(&self) -> vk::DeviceSize {
+        self.allocation.offset()
+    }
+
     /// Writes a [`ShaderType`](crate::ShaderType) or
     /// [`DynShaderType`](crate::DynShaderType) value (e.g. a struct with a
     /// `Vec<T>` tail field) with automatic scalar-layout padding.

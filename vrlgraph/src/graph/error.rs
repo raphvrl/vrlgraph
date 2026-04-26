@@ -39,4 +39,9 @@ pub enum GraphError {
     /// is part of the cycle.
     #[error("Render pass cycle detected involving pass '{0}'")]
     PassCycle(&'static str),
+    /// Image readback was requested for a format that does not have a fixed,
+    /// uniform bytes-per-pixel mapping. Depth, stencil, planar, and
+    /// block-compressed formats fall in this category.
+    #[error("Image readback is not supported for format {0:?}")]
+    UnsupportedReadbackFormat(vk::Format),
 }

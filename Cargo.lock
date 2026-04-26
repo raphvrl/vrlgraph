@@ -2534,6 +2534,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "gpu-allocator",
+ "image",
  "notify",
  "petgraph",
  "raw-window-handle",
